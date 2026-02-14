@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Middle Finger Particle Effect</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #video {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 240px;
+            height: 180px;
+            border: 2px solid #333;
+            border-radius: 10px;
+            z-index: 20;
+            transform: scaleX(-1);
+            object-fit: cover;
+        }
+
+        #status {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 18px;
+            z-index: 30;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+        }
+
+        #detection {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff3333;
+            font-size: 48px;
+            font-weight: bold;
+            z-index: 30;
+            text-align: center;
+            text-shadow: 0 0 20px rgba(255, 50, 50, 0.8);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #detection.active {
+            opacity: 1;
+        }
+
+        #debugCanvas {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 240px;
+            height: 180px;
+            border: 2px solid #333;
+            border-radius: 10px;
+            z-index: 20;
+            background: #111;
+        }
+
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 100;
+            text-align: center;
+        }
+
+        .loading .spinner {
+            border: 4px solid #333;
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="loadingScreen" class="loading">
+        <div class="spinner"></div>
+        <p>Loading Hand Tracking...</p>
+        <p style="font-size: 14px; color: #888; margin-top: 10px;">Please allow camera access</p>
+    </div>
+
+    <canvas id="canvas"></canvas>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="debugCanvas"></canvas>
+    <div id="status">Show your middle finger to the camera 🖕</div>
+    <div id="detection">🖕 MIDDLE FINGER DETECTED! 🖕</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"></script>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('video');
+        const debugCanvas = document.getElementById('debugCanvas');
+        const debugCtx = debugCanvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const detectionEl = document.getElementById('detection');
+        const loadingScreen = document.getElementById('loadingScreen');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        debugCanvas.width = 240;
+        debugCanvas.height = 180;
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // Particle system
+        let particles = [];
+        let middleFingerDetected = false;
+        let fingerTipPos = { x: 0.5, y: 0.5 };
+        let explosionCooldown = 0;
+        let continuousParticles = false;
+
+        class Particle {
+            constructor(x, y, type = 'explosion') {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+
+                if (type === 'explosion') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 8 + 2;
+                    this.vx = Math.cos(angle) * speed;
+                    this.vy = Math.sin(angle) * speed;
+                    this.size = Math.random() * 6 + 2;
+                    this.life = 1.0;
+                    this.decay = Math.random() * 0.02 + 0.005;
+                    this.color = this.getRandomColor();
+                    this.gravity = 0.05;
+                    this.rotation = Math.random() * Math.PI * 2;
+                    this.rotationSpeed = (Math.random() - 0.5) * 0.2;
+                } else if (type === 'trail') {
+                    this.vx = (Math.random() - 0.5) * 3;
+                    this.vy = (Math.random() - 0.5) * 3 - 1;
+                    this.size = Math.random() * 4 + 1;
+                    this.life = 1.0;
+                    this.decay = Math.random() * 0.03 + 0.01;
+                    this.color = this.getFireColor();
+                    this.gravity = -0.02;
+                    this.rotation = 0;
+                    this.rotationSpeed = 0;
+                } else if (type === 'emoji') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 5 + 3;
+                    this.vx = Math.cos(angle) * speed;
+                    this.vy = Math.sin(angle) * speed;
+                    this.size = Math.random() * 30 + 15;
+                    this.life = 1.0;
+                    this.decay = Math.random() * 0.01 + 0.005;
+                    this.emoji = '🖕';
+                    this.gravity = 0.08;
+                    this.rotation = Math.random() * Math.PI * 2;
+                    this.rotationSpeed = (Math.random() - 0.5) * 0.15;
+                } else if (type === 'spark') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 12 + 5;
+                    this.vx = Math.cos(angle) * speed;
+                    this.vy = Math.sin(angle) * speed;
+                    this.size = Math.random() * 3 + 1;
+                    this.life = 1.0;
+                    this.decay = Math.random() * 0.03 + 0.02;
+                    this.color = `hsl(${Math.random() * 60 + 10}, 100%, ${Math.random() * 30 + 60}%)`;
+                    this.gravity = 0.1;
+                    this.rotation = 0;
+                    this.rotationSpeed = 0;
+                    this.trail = [];
+                }
+            }
+
+            getRandomColor() {
+                const colors = [
+                    '#ff3333', '#ff6633', '#ffcc00', '#ff0066',
+                    '#ff4444', '#ff8800', '#ffaa00', '#ff2200',
+                    '#ff5555', '#ee1111', '#ff7700', '#ffdd00'
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            getFireColor() {
+                const r = 255;
+                const g = Math.floor(Math.random() * 150 + 50);
+                const b = Math.floor(Math.random() * 50);
+                return `rgb(${r},${g},${b})`;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += this.gravity;
+                this.vx *= 0.99;
+                this.life -= this.decay;
+                this.rotation += this.rotationSpeed;
+
+                if (this.type === 'spark' && this.trail) {
+                    this.trail.push({ x: this.x, y: this.y, life: this.life });
+                    if (this.trail.length > 8) this.trail.shift();
+                }
+            }
+
+            draw(ctx) {
+                if (this.life <= 0) return;
+
+                ctx.save();
+                ctx.globalAlpha = this.life;
+
+                if (this.type === 'emoji') {
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.rotation);
+                    ctx.font = `${this.size}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(this.emoji, 0, 0);
+                } else if (this.type === 'spark' && this.trail) {
+                    // Draw trail
+                    for (let i = 0; i < this.trail.length - 1; i++) {
+                        const t = this.trail[i];
+                        ctx.globalAlpha = (i / this.trail.length) * this.life * 0.5;
+                        ctx.beginPath();
+                        ctx.arc(t.x, t.y, this.size * 0.5, 0, Math.PI * 2);
+                        ctx.fillStyle = this.color;
+                        ctx.fill();
+                    }
+                    ctx.globalAlpha = this.life;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = this.color;
+                    ctx.fill();
+                } else {
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.rotation);
+
+                    // Glow
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = this.color;
+
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+
+                    // Inner bright core
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size * 0.4, 0, Math.PI * 2);
+                    ctx.fillStyle = '#fff';
+                    ctx.globalAlpha = this.life * 0.6;
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
+        // Middle finger shape made of particles
+        class MiddleFingerShape {
+            constructor(x, y, scale = 1) {
+                this.particles = [];
+                this.createShape(x, y, scale);
+            }
+
+            createShape(cx, cy, scale) {
+                const s = scale;
+
+                // Middle finger (tall line going up)
+                for (let y = 0; y > -120 * s; y -= 4) {
+                    for (let x = -8 * s; x <= 8 * s; x += 4) {
+                        this.addParticle(cx + x, cy + y);
+                    }
+                }
+
+                // Fingertip (rounded)
+                for (let angle = 0; angle < Math.PI; angle += 0.2) {
+                    for (let r = 0; r < 10 * s; r += 4) {
+                        const px = cx + Math.cos(angle + Math.PI) * r;
+                        const py = cy - 120 * s + Math.sin(angle + Math.PI) * r;
+                        this.addParticle(px, py);
+                    }
+                }
+
+                // Fist / palm area
+                for (let y = 0; y < 50 * s; y += 4) {
+                    for (let x = -35 * s; x <= 35 * s; x += 4) {
+                        this.addParticle(cx + x, cy + y);
+                    }
+                }
+
+                // Curled fingers (bumps on top of fist)
+                const fingerPositions = [-25, -10, 10, 25];
+                for (const fp of fingerPositions) {
+                    if (Math.abs(fp) < 5) continue; // skip middle
+                    for (let angle = 0; angle < Math.PI; angle += 0.3) {
+                        for (let r = 0; r < 8 * s; r += 3) {
+                            const px = cx + fp * s + Math.cos(angle + Math.PI) * r;
+                            const py = cy + Math.sin(angle + Math.PI) * r;
+                            this.addParticle(px, py);
+                        }
+                    }
+                }
+
+                // Thumb (on the side)
+                for (let y = 10 * s; y < 40 * s; y += 4) {
+                    for (let x = 35 * s; x < 50 * s; x += 4) {
+                        this.addParticle(cx + x, cy + y);
+                    }
+                }
+            }
+
+            addParticle(x, y) {
+                const p = new Particle(x, y, 'explosion');
+                p.vx = (Math.random() - 0.5) * 2;
+                p.vy = (Math.random() - 0.5) * 2;
+                p.size = Math.random() * 4 + 2;
+                p.decay = Math.random() * 0.008 + 0.003;
+                p.gravity = 0.02;
+                this.particles.push(p);
+            }
+        }
+
+        function createExplosion(x, y) {
+            // Big explosion particles
+            for (let i = 0; i < 80; i++) {
+                particles.push(new Particle(x, y, 'explosion'));
+            }
+
+            // Sparks
+            for (let i = 0; i < 30; i++) {
+                particles.push(new Particle(x, y, 'spark'));
+            }
+
+            // Emoji particles
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(x, y, 'emoji'));
+            }
+
+            // Middle finger shape
+            const shape = new MiddleFingerShape(x, y - 50, 1.2);
+            particles.push(...shape.particles);
+        }
+
+        function createTrailParticles(x, y) {
+            for (let i = 0; i < 5; i++) {
+                particles.push(new Particle(x, y, 'trail'));
+            }
+            if (Math.random() < 0.1) {
+                const p = new Particle(x, y, 'emoji');
+                p.size = Math.random() * 20 + 10;
+                p.vy = -Math.random() * 3 - 1;
+                p.vx = (Math.random() - 0.5) * 2;
+                particles.push(p);
+            }
+        }
+
+        // Hand detection
+        function isMiddleFinger(landmarks) {
+            // Landmark indices:
+            // 0: wrist
+            // 5,6,7,8: index finger (mcp, pip, dip, tip)
+            // 9,10,11,12: middle finger
+            // 13,14,15,16: ring finger
+            // 17,18,19,20: pinky
+            // 1,2,3,4: thumb
+
+            const wrist = landmarks[0];
+
+            // Get finger tip and mcp (knuckle) positions
+            const middleTip = landmarks[12];
+            const middlePip = landmarks[11];
+            const middleDip = landmarks[10];
+            const middleMcp = landmarks[9];
+
+            const indexTip = landmarks[8];
+            const indexPip = landmarks[7];
+            const indexDip = landmarks[6];
+            const indexMcp = landmarks[5];
+
+            const ringTip = landmarks[16];
+            const ringPip = landmarks[15];
+            const ringDip = landmarks[14];
+            const ringMcp = landmarks[13];
+
+            const pinkyTip = landmarks[20];
+            const pinkyPip = landmarks[19];
+            const pinkyDip = landmarks[18];
+            const pinkyMcp = landmarks[17];
+
+            const thumbTip = landmarks[4];
+            const thumbIp = landmarks[3];
+            const thumbMcp = landmarks[2];
+
+            // Calculate if a finger is extended (tip is far from wrist relative to mcp)
+            function fingerExtended(tip, pip, mcp) {
+                const tipToWrist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+                const mcpToWrist = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
+                const tipToPip = Math.hypot(tip.x - pip.x, tip.y - pip.y);
+                // Finger is extended if tip is further from wrist than mcp
+                // and tip is further from mcp (finger is straight)
+                return tipToWrist > mcpToWrist * 1.1;
+            }
+
+            function fingerCurled(tip, pip, mcp) {
+                const tipToWrist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+                const mcpToWrist = Math.hypot(mcp.x - wrist.x, mcp.y - wrist.y);
+                return tipToWrist < mcpToWrist * 1.1;
+            }
+
+            const middleExtended = fingerExtended(middleTip, middlePip, middleMcp);
+            const indexCurled = fingerCurled(indexTip, indexPip, indexMcp);
+            const ringCurled = fingerCurled(ringTip, ringPip, ringMcp);
+            const pinkyCurled = fingerCurled(pinkyTip, pinkyPip, pinkyMcp);
+
+            // Middle finger should be extended, others should be curled
+            const isMiddleFingerGesture = middleExtended && indexCurled && ringCurled && pinkyCurled;
+
+            return {
+                detected: isMiddleFingerGesture,
+                tipPosition: middleTip
+            };
+        }
+
+        // MediaPipe Hands setup
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        function onResults(results) {
+            // Draw debug view
+            debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            debugCtx.drawImage(results.image, 0, 0, debugCanvas.width, debugCanvas.height);
+
+            let detected = false;
+            let tipPos = null;
+
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    // Draw landmarks on debug canvas
+                    debugCtx.fillStyle = '#00ff00';
+                    for (const lm of landmarks) {
+                        debugCtx.beginPath();
+                        debugCtx.arc(lm.x * debugCanvas.width, lm.y * debugCanvas.height, 2, 0, Math.PI * 2);
+                        debugCtx.fill();
+                    }
+
+                    // Draw connections
+                    const connections = [
+                        [0, 1], [1, 2], [2, 3], [3, 4],
+                        [0, 5], [5, 6], [6, 7], [7, 8],
+                        [0, 9], [9, 10], [10, 11], [11, 12],
+                        [0, 13], [13, 14], [14, 15], [15, 16],
+                        [0, 17], [17, 18], [18, 19], [19, 20],
+                        [5, 9], [9, 13], [13, 17]
+                    ];
+
+                    debugCtx.strokeStyle = '#00ff00';
+                    debugCtx.lineWidth = 1;
+                    for (const [i, j] of connections) {
+                        debugCtx.beginPath();
+                        debugCtx.moveTo(landmarks[i].x * debugCanvas.width, landmarks[i].y * debugCanvas.height);
+                        debugCtx.lineTo(landmarks[j].x * debugCanvas.width, landmarks[j].y * debugCanvas.height);
+                        debugCtx.stroke();
+                    }
+
+                    // Highlight middle finger
+                    const middleIndices = [9, 10, 11, 12];
+                    debugCtx.strokeStyle = '#ff0000';
+                    debugCtx.lineWidth = 2;
+                    for (let i = 0; i < middleIndices.length - 1; i++) {
+                        const a = landmarks[middleIndices[i]];
+                        const b = landmarks[middleIndices[i + 1]];
+                        debugCtx.beginPath();
+                        debugCtx.moveTo(a.x * debugCanvas.width, a.y * debugCanvas.height);
+                        debugCtx.lineTo(b.x * debugCanvas.width, b.y * debugCanvas.height);
+                        debugCtx.stroke();
+                    }
+
+                    const result = isMiddleFinger(landmarks);
+                    if (result.detected) {
+                        detected = true;
+                        // Mirror the x coordinate since video is mirrored
+                        tipPos = { x: 1 - result.tipPosition.x, y: result.tipPosition.y };
+                    }
+                }
+            }
+
+            if (detected && tipPos) {
+                middleFingerDetected = true;
+                fingerTipPos = tipPos;
+
+                detectionEl.classList.add('active');
+
+                // Convert normalized coordinates to screen coordinates
+                const screenX = tipPos.x * canvas.width;
+                const screenY = tipPos.y * canvas.height;
+
+                // Create trail particles continuously
+                createTrailParticles(screenX, screenY);
+
+                // Create big explosion periodically
+                explosionCooldown--;
+                if (explosionCooldown <= 0) {
+                    createExplosion(screenX, screenY);
+                    explosionCooldown = 30; // frames between explosions
+                }
+
+                statusEl.textContent = '🖕 DETECTED! Making particles! 🖕';
+                statusEl.style.color = '#ff3333';
+            } else {
+                middleFingerDetected = false;
+                detectionEl.classList.remove('active');
+                statusEl.textContent = 'Show your middle finger to the camera 🖕';
+                statusEl.style.color = '#fff';
+                explosionCooldown = 0;
+            }
+        }
+
+        // Start camera
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480, facingMode: 'user' }
+                });
+                video.srcObject = stream;
+
+                const camera = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({ image: video });
+                    },
+                    width: 640,
+                    height: 480
+                });
+
+                camera.start();
+                loadingScreen.style.display = 'none';
+            } catch (err) {
+                console.error('Camera error:', err);
+                loadingScreen.innerHTML = `
+                    <p style="color: #ff3333;">❌ Camera access denied</p>
+                    <p style="font-size: 14px; color: #888; margin-top: 10px;">
+                        Please allow camera access and reload the page.
+                    </p>
+                `;
+            }
+        }
+
+        // Background stars
+        const stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                size: Math.random() * 2 + 0.5,
+                twinkle: Math.random() * Math.PI * 2,
+                speed: Math.random() * 0.02 + 0.01
+            });
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background stars
+            for (const star of stars) {
+                star.twinkle += star.speed;
+                const alpha = 0.3 + Math.sin(star.twinkle) * 0.3;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.fill();
+            }
+
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                particles[i].draw(ctx);
+
+                if (particles[i].isDead()) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // Limit particles
+            if (particles.length > 3000) {
+                particles.splice(0, particles.length - 3000);
+            }
+
+            // Draw particle count
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.font = '12px monospace';
+            ctx.fillText(`Particles: ${particles.length}`, 10, canvas.height - 10);
+        }
+
+        animate();
+        startCamera();
+    </script>
+</body>
+</html>
