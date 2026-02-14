@@ -6,15 +6,15 @@
     <title>🖕 EPIC Middle Finger</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
-        body{background:#000;overflow:hidden;font-family:'Segoe UI',Arial,sans-serif;cursor:crosshair}
-        #video{position:fixed;bottom:15px;right:15px;width:200px;height:150px;border:1px solid #222;border-radius:8px;z-index:20;transform:scaleX(-1);object-fit:cover;opacity:0.85}
+        body{background:#000;overflow:hidden;font-family:'Segoe UI',Arial,sans-serif}
+        #video{position:fixed;bottom:15px;right:15px;width:200px;height:150px;border:1px solid #222;border-radius:8px;z-index:20;transform:scaleX(-1);object-fit:cover;opacity:.85}
         #debugCanvas{position:fixed;bottom:15px;left:15px;width:200px;height:150px;border:1px solid #333;border-radius:8px;z-index:20;background:#000}
-        #status{position:fixed;top:15px;left:50%;transform:translateX(-50%);color:#555;font-size:13px;z-index:30;text-align:center;background:rgba(0,0,0,0.85);padding:8px 18px;border-radius:20px;border:1px solid #222;letter-spacing:.5px;transition:all .3s}
-        #status.active{color:#ff2020;border-color:#ff2020;box-shadow:0 0 25px rgba(255,30,30,0.4)}
+        #status{position:fixed;top:15px;left:50%;transform:translateX(-50%);color:#555;font-size:13px;z-index:30;text-align:center;background:rgba(0,0,0,.85);padding:8px 18px;border-radius:20px;border:1px solid #222;letter-spacing:.5px;transition:all .3s}
+        #status.active{color:#ff2020;border-color:#ff2020;box-shadow:0 0 25px rgba(255,30,30,.4)}
         #flash{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;opacity:0;transition:opacity .15s}
-        #flash.spawn{opacity:1;background:radial-gradient(circle,rgba(255,60,20,0.25),transparent 70%);transition:opacity .03s}
-        #flash.explode{opacity:1;background:radial-gradient(circle,rgba(255,255,255,0.5),rgba(255,40,20,0.3) 40%,transparent 70%);transition:opacity .03s}
-        #vignette{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,0.7) 100%)}
+        #flash.spawn{opacity:1;background:radial-gradient(circle,rgba(255,60,20,.25),transparent 70%);transition:opacity .03s}
+        #flash.explode{opacity:1;background:radial-gradient(circle,rgba(255,255,255,.5),rgba(255,40,20,.3) 40%,transparent 70%);transition:opacity .03s}
+        #vignette{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.7))}
         .loading{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#666;font-size:16px;z-index:100;text-align:center}
         .spinner{border:2px solid #1a1a1a;border-top:2px solid #ff2020;border-radius:50%;width:32px;height:32px;animation:s .8s linear infinite;margin:12px auto}
         @keyframes s{to{transform:rotate(360deg)}}
@@ -44,206 +44,131 @@
 
         let shakeAmount=0;
         function screenShake(a){shakeAmount=Math.max(shakeAmount,a)}
-        function doFlash(type){
-            flashEl.className='';
-            void flashEl.offsetWidth;
-            flashEl.classList.add(type);
-            setTimeout(()=>flashEl.className='',200);
-        }
+        function doFlash(type){flashEl.className='';void flashEl.offsetWidth;flashEl.classList.add(type);setTimeout(()=>flashEl.className='',200)}
 
         // THREE
         const scene=new THREE.Scene();
         scene.background=new THREE.Color(0x000000);
-        const camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,0.1,800);
-        camera.position.set(0,18,50);
-        const renderer=new THREE.WebGLRenderer({antialias:false,alpha:false});
+        const camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,.1,800);
+        camera.position.set(0,14,40);
+        const renderer=new THREE.WebGLRenderer({antialias:false});
         renderer.setSize(innerWidth,innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+        renderer.setPixelRatio(Math.min(devicePixelRatio,2));
         renderer.shadowMap.enabled=false;
-        renderer.toneMapping=THREE.NoToneMapping;
         document.body.prepend(renderer.domElement);
         window.addEventListener('resize',()=>{
-            camera.aspect=innerWidth/innerHeight;
-            camera.updateProjectionMatrix();
+            camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
             renderer.setSize(innerWidth,innerHeight);
-            composer.setSize(innerWidth,innerHeight);
-            bloomPass.resolution.set(innerWidth,innerHeight);
+            rtMain.setSize(innerWidth,innerHeight);
+            rtA.setSize(Math.floor(innerWidth/4),Math.floor(innerHeight/4));
+            rtB.setSize(Math.floor(innerWidth/4),Math.floor(innerHeight/4));
         });
 
-        scene.add(new THREE.AmbientLight(0xffffff,0.6));
-        const dLight=new THREE.DirectionalLight(0xffccaa,0.4);
-        dLight.position.set(10,20,10);
-        scene.add(dLight);
+        scene.add(new THREE.AmbientLight(0xffffff,.5));
+        const dL=new THREE.DirectionalLight(0xffddcc,.3);dL.position.set(10,20,15);scene.add(dL);
 
-        // Post-processing: bloom
-        // Inline minimal bloom since we can't import modules
-        // We'll use a second pass with additive blending
-        // Actually let's use the built-in approach with an overlay scene
-
-        // Create glow sprites overlay
-        const glowScene=new THREE.Scene();
-        const glowCamera=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
-
-        // Render targets for ping-pong blur
-        const rtParams={minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,format:THREE.RGBAFormat};
-        let rtA=new THREE.WebGLRenderTarget(Math.floor(innerWidth/4),Math.floor(innerHeight/4),rtParams);
-        let rtB=new THREE.WebGLRenderTarget(Math.floor(innerWidth/4),Math.floor(innerHeight/4),rtParams);
-        let rtMain=new THREE.WebGLRenderTarget(innerWidth,innerHeight,rtParams);
+        // Bloom
+        const ortho=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+        const rtp={minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,format:THREE.RGBAFormat};
+        let rtA=new THREE.WebGLRenderTarget(Math.floor(innerWidth/4),Math.floor(innerHeight/4),rtp);
+        let rtB=new THREE.WebGLRenderTarget(Math.floor(innerWidth/4),Math.floor(innerHeight/4),rtp);
+        let rtMain=new THREE.WebGLRenderTarget(innerWidth,innerHeight,rtp);
 
         const blurMat=new THREE.ShaderMaterial({
-            uniforms:{
-                tDiffuse:{value:null},
-                direction:{value:new THREE.Vector2(1,0)},
-                resolution:{value:new THREE.Vector2(rtA.width,rtA.height)}
-            },
-            vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.0);}`,
-            fragmentShader:`
-                uniform sampler2D tDiffuse;
-                uniform vec2 direction;
-                uniform vec2 resolution;
-                varying vec2 vUv;
-                void main(){
-                    vec2 off=direction/resolution;
-                    vec4 c=vec4(0.0);
-                    c+=texture2D(tDiffuse,vUv-4.0*off)*0.02;
-                    c+=texture2D(tDiffuse,vUv-3.0*off)*0.06;
-                    c+=texture2D(tDiffuse,vUv-2.0*off)*0.12;
-                    c+=texture2D(tDiffuse,vUv-1.0*off)*0.2;
-                    c+=texture2D(tDiffuse,vUv)*0.2;
-                    c+=texture2D(tDiffuse,vUv+1.0*off)*0.2;
-                    c+=texture2D(tDiffuse,vUv+2.0*off)*0.12;
-                    c+=texture2D(tDiffuse,vUv+3.0*off)*0.06;
-                    c+=texture2D(tDiffuse,vUv+4.0*off)*0.02;
-                    gl_FragColor=c;
-                }
-            `
+            uniforms:{tDiffuse:{value:null},direction:{value:new THREE.Vector2(1,0)},resolution:{value:new THREE.Vector2(rtA.width,rtA.height)}},
+            vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.);}`,
+            fragmentShader:`uniform sampler2D tDiffuse;uniform vec2 direction;uniform vec2 resolution;varying vec2 vUv;
+            void main(){vec2 o=direction/resolution;vec4 c=vec4(0.);
+            c+=texture2D(tDiffuse,vUv-4.*o)*.02;c+=texture2D(tDiffuse,vUv-3.*o)*.06;
+            c+=texture2D(tDiffuse,vUv-2.*o)*.12;c+=texture2D(tDiffuse,vUv-1.*o)*.2;
+            c+=texture2D(tDiffuse,vUv)*.2;c+=texture2D(tDiffuse,vUv+1.*o)*.2;
+            c+=texture2D(tDiffuse,vUv+2.*o)*.12;c+=texture2D(tDiffuse,vUv+3.*o)*.06;
+            c+=texture2D(tDiffuse,vUv+4.*o)*.02;gl_FragColor=c;}`
         });
-
-        const compositeMat=new THREE.ShaderMaterial({
-            uniforms:{
-                tScene:{value:null},
-                tBloom:{value:null},
-                bloomStrength:{value:1.8}
-            },
-            vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.0);}`,
-            fragmentShader:`
-                uniform sampler2D tScene;
-                uniform sampler2D tBloom;
-                uniform float bloomStrength;
-                varying vec2 vUv;
-                void main(){
-                    vec4 scene=texture2D(tScene,vUv);
-                    vec4 bloom=texture2D(tBloom,vUv);
-                    gl_FragColor=scene+bloom*bloomStrength;
-                    gl_FragColor.a=1.0;
-                }
-            `
+        const compMat=new THREE.ShaderMaterial({
+            uniforms:{tScene:{value:null},tBloom:{value:null},bloomStrength:{value:1.5}},
+            vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position,1.);}`,
+            fragmentShader:`uniform sampler2D tScene;uniform sampler2D tBloom;uniform float bloomStrength;varying vec2 vUv;
+            void main(){gl_FragColor=texture2D(tScene,vUv)+texture2D(tBloom,vUv)*bloomStrength;gl_FragColor.a=1.;}`
         });
+        const fsGeo=new THREE.PlaneGeometry(2,2);
+        const blurQ=new THREE.Mesh(fsGeo,blurMat);const blurSc=new THREE.Scene();blurSc.add(blurQ);
+        const compQ=new THREE.Mesh(fsGeo,compMat);const compSc=new THREE.Scene();compSc.add(compQ);
 
-        const fsQuadGeo=new THREE.PlaneGeometry(2,2);
-        const blurQuad=new THREE.Mesh(fsQuadGeo,blurMat);
-        const compositeQuad=new THREE.Mesh(fsQuadGeo,compositeMat);
-        const blurScene=new THREE.Scene();
-        blurScene.add(blurQuad);
-        const compScene=new THREE.Scene();
-        compScene.add(compositeQuad);
+        function renderWithBloom(){
+            renderer.setRenderTarget(rtMain);renderer.render(scene,camera);
+            blurMat.uniforms.tDiffuse.value=rtMain.texture;blurMat.uniforms.direction.value.set(1,0);
+            blurMat.uniforms.resolution.value.set(rtA.width,rtA.height);
+            renderer.setRenderTarget(rtA);renderer.render(blurSc,ortho);
+            blurMat.uniforms.tDiffuse.value=rtA.texture;blurMat.uniforms.direction.value.set(0,1);
+            renderer.setRenderTarget(rtB);renderer.render(blurSc,ortho);
+            blurMat.uniforms.tDiffuse.value=rtB.texture;blurMat.uniforms.direction.value.set(1,0);
+            renderer.setRenderTarget(rtA);renderer.render(blurSc,ortho);
+            blurMat.uniforms.tDiffuse.value=rtA.texture;blurMat.uniforms.direction.value.set(0,1);
+            renderer.setRenderTarget(rtB);renderer.render(blurSc,ortho);
+            compMat.uniforms.tScene.value=rtMain.texture;compMat.uniforms.tBloom.value=rtB.texture;
+            renderer.setRenderTarget(null);renderer.render(compSc,ortho);
+        }
 
-        const composer={
-            render:function(){
-                // 1. Render main scene
-                renderer.setRenderTarget(rtMain);
-                renderer.render(scene,camera);
-
-                // 2. Downscale + blur horizontal
-                blurMat.uniforms.tDiffuse.value=rtMain.texture;
-                blurMat.uniforms.direction.value.set(1,0);
-                blurMat.uniforms.resolution.value.set(rtA.width,rtA.height);
-                renderer.setRenderTarget(rtA);
-                renderer.render(blurScene,glowCamera);
-
-                // 3. Blur vertical
-                blurMat.uniforms.tDiffuse.value=rtA.texture;
-                blurMat.uniforms.direction.value.set(0,1);
-                renderer.setRenderTarget(rtB);
-                renderer.render(blurScene,glowCamera);
-
-                // 4. Second pass blur for wider glow
-                blurMat.uniforms.tDiffuse.value=rtB.texture;
-                blurMat.uniforms.direction.value.set(1,0);
-                renderer.setRenderTarget(rtA);
-                renderer.render(blurScene,glowCamera);
-
-                blurMat.uniforms.tDiffuse.value=rtA.texture;
-                blurMat.uniforms.direction.value.set(0,1);
-                renderer.setRenderTarget(rtB);
-                renderer.render(blurScene,glowCamera);
-
-                // 5. Composite
-                compositeMat.uniforms.tScene.value=rtMain.texture;
-                compositeMat.uniforms.tBloom.value=rtB.texture;
-                renderer.setRenderTarget(null);
-                renderer.render(compScene,glowCamera);
-            },
-            setSize:function(w,h){
-                rtMain.setSize(w,h);
-                rtA.setSize(Math.floor(w/4),Math.floor(h/4));
-                rtB.setSize(Math.floor(w/4),Math.floor(h/4));
-            }
-        };
-
-        // Instanced particles
-        const GEO=new THREE.BoxGeometry(0.38,0.38,0.38);
+        // Instanced cubes
+        const GEO=new THREE.BoxGeometry(.38,.38,.38);
         const MAT=new THREE.MeshBasicMaterial({color:0xffffff});
         const MAX=35000;
         const imesh=new THREE.InstancedMesh(GEO,MAT,MAX);
-        imesh.count=0;
-        scene.add(imesh);
-        const dum=new THREE.Object3D();
-        const tc=new THREE.Color();
+        imesh.count=0;scene.add(imesh);
+        const dum=new THREE.Object3D();const tc=new THREE.Color();
 
-        // Point light that follows active finger
-        const fingerLight=new THREE.PointLight(0xff2200,0,80);
-        scene.add(fingerLight);
+        const fingerLight=new THREE.PointLight(0xff2200,0,80);scene.add(fingerLight);
         let fingerLightTarget=0;
 
         const P=[];
         function addP(x,y,z,vx,vy,vz,r,g,b,size,life,decay,grav,type){
             if(P.length>=MAX)return;
             P.push({x,y,z,vx,vy,vz,r,g,b,size,life,maxLife:life,decay,grav,type:type||'fx',
-                groupId:-1,spin:(Math.random()-0.5)*0.15,rotX:Math.random()*6.28,rotY:Math.random()*6.28,
+                groupId:-1,spin:(Math.random()-.5)*.15,rotX:Math.random()*6.28,rotY:Math.random()*6.28,
                 tx:x,ty:y,tz:z,baseR:r,baseG:g,baseB:b,shimmer:Math.random()*6.28,
-                formDelay:0,formTimer:0,formed:true,
-                spawnAngle:0,spawnDist:0,spawnH:0});
+                formDelay:0,formTimer:0,formed:true,spawnAngle:0,spawnDist:0,spawnH:0,pulseOffset:Math.random()*6.28});
+        }
+
+        // Color palette
+        function fingerColor(h){
+            // h: 0..1 from bottom to top
+            const palette=Math.random();
+            if(palette<.4){
+                // Deep red / crimson
+                return{r:.85+Math.random()*.15,g:.03+h*.12+Math.random()*.04,b:.01+Math.random()*.03};
+            }else if(palette<.7){
+                // Bright orange-red
+                return{r:.95+Math.random()*.05,g:.15+h*.3+Math.random()*.08,b:.01+Math.random()*.04};
+            }else if(palette<.88){
+                // Hot ember orange
+                return{r:.9+Math.random()*.1,g:.3+h*.35+Math.random()*.1,b:.02+Math.random()*.06};
+            }else{
+                // Rare white-hot core
+                return{r:1,g:.7+Math.random()*.3,b:.4+Math.random()*.4};
+            }
+        }
+
+        function fxColor(){
+            const t=Math.random();
+            if(t<.4)return{r:1,g:.1+Math.random()*.15,b:.01+Math.random()*.04};
+            if(t<.7)return{r:1,g:.3+Math.random()*.2,b:.02+Math.random()*.06};
+            if(t<.9)return{r:1,g:.5+Math.random()*.2,b:.05+Math.random()*.1};
+            return{r:1,g:.8+Math.random()*.2,b:.5+Math.random()*.4};
         }
 
         // ── FINGER MODEL ─────────────────────────────────────────
         function buildFinger(){
             const pts=[];
             function cyl(cx,cy,cz,rad,h,step,seg){
-                for(let y=0;y<h;y+=step){
-                    const t=y/h;
-                    const r=rad*(1-t*0.12);
-                    for(let i=0;i<seg;i++){
-                        const a=(i/seg)*Math.PI*2;
-                        pts.push({x:cx+Math.cos(a)*r,y:cy+y,z:cz+Math.sin(a)*r});
-                    }
-                    if(y%(step*2)<step){
-                        for(let i=0;i<Math.max(2,seg-3);i++){
-                            const a=(i/(seg-3))*Math.PI*2;
-                            pts.push({x:cx+Math.cos(a)*r*0.45,y:cy+y,z:cz+Math.sin(a)*r*0.45});
-                        }
-                    }
+                for(let y=0;y<h;y+=step){const t=y/h;const r=rad*(1-t*.12);
+                    for(let i=0;i<seg;i++){const a=(i/seg)*Math.PI*2;pts.push({x:cx+Math.cos(a)*r,y:cy+y,z:cz+Math.sin(a)*r})}
+                    if(y%(step*2)<step){for(let i=0;i<Math.max(2,seg-3);i++){const a=(i/(seg-3))*Math.PI*2;pts.push({x:cx+Math.cos(a)*r*.45,y:cy+y,z:cz+Math.sin(a)*r*.45})}}
                 }
             }
             function hemi(cx,cy,cz,rad,seg){
-                for(let p=0;p<Math.PI/2;p+=0.22){
-                    const r=rad*Math.cos(p);
-                    const n=Math.max(3,Math.round(seg*Math.cos(p)));
-                    for(let i=0;i<n;i++){
-                        const a=(i/n)*Math.PI*2;
-                        pts.push({x:cx+Math.cos(a)*r,y:cy+Math.sin(p)*rad,z:cz+Math.sin(a)*r});
-                    }
-                }
+                for(let p=0;p<Math.PI/2;p+=.22){const r=rad*Math.cos(p);const n=Math.max(3,Math.round(seg*Math.cos(p)));
+                    for(let i=0;i<n;i++){const a=(i/n)*Math.PI*2;pts.push({x:cx+Math.cos(a)*r,y:cy+Math.sin(p)*rad,z:cz+Math.sin(a)*r})}}
                 pts.push({x:cx,y:cy+rad,z:cz});
             }
             function box(cx,cy,cz,w,h,d,step){
@@ -253,253 +178,189 @@
                 }
                 for(let x=-w/2;x<=w/2;x+=step)for(let z=-d/2;z<=d/2;z+=step){pts.push({x:cx+x,y:cy,z:cz+z});pts.push({x:cx+x,y:cy+h,z:cz+z})}
             }
-
-            cyl(0,5.5,0,1.15,14.5,0.45,11);
+            cyl(0,5.5,0,1.15,14.5,.45,11);
             hemi(0,20,0,1.15,11);
-            box(0,0,0,8.5,5.5,3.5,0.65);
-            for(let y=0.5;y<5;y+=1.2)for(let x=-3;x<=3;x+=1.4)pts.push({x,y,z:0});
-
+            box(0,0,0,8.5,5.5,3.5,.65);
+            for(let y=.5;y<5;y+=1.2)for(let x=-3;x<=3;x+=1.4)pts.push({x,y,z:0});
             for(const fx of[-3,-1,1,3]){
-                for(let t=0;t<=1;t+=0.06){
-                    const a=t*Math.PI*0.75;
-                    const cy=5.5+Math.sin(a)*1.5;
-                    const cz=Math.cos(a)*1.5-0.5;
-                    for(let i=0;i<5;i++){const ang=(i/5)*Math.PI*2;pts.push({x:fx+Math.cos(ang)*0.5,y:cy+Math.sin(ang)*0.55,z:cz})}
-                }
+                for(let t=0;t<=1;t+=.06){const a=t*Math.PI*.75;const cy=5.5+Math.sin(a)*1.5;const cz=Math.cos(a)*1.5-.5;
+                    for(let i=0;i<5;i++){const ang=(i/5)*Math.PI*2;pts.push({x:fx+Math.cos(ang)*.5,y:cy+Math.sin(ang)*.55,z:cz})}}
             }
-            for(let t=0;t<=1;t+=0.04){
-                const tx=4.75+Math.sin(t*1.2)*1.5;
-                const ty=0.8+t*3.8;
-                const tz=1.75*(1-t*0.6)+0.5;
-                for(let i=0;i<5;i++){const a=(i/5)*Math.PI*2;pts.push({x:tx+Math.cos(a)*0.6,y:ty,z:tz+Math.sin(a)*0.6})}
-            }
-            hemi(4.75+Math.sin(1.2)*1.5,4.6,1.75*0.4+0.5,0.6,4);
-            for(let y=-3;y<0;y+=0.55){
-                const s=1+y*0.04;
-                for(let x=-4.25*s;x<=4.25*s;x+=0.75){pts.push({x,y,z:1.75*s});pts.push({x,y,z:-1.75*s})}
-            }
+            for(let t=0;t<=1;t+=.04){const tx=4.75+Math.sin(t*1.2)*1.5;const ty=.8+t*3.8;const tz=1.75*(1-t*.6)+.5;
+                for(let i=0;i<5;i++){const a=(i/5)*Math.PI*2;pts.push({x:tx+Math.cos(a)*.6,y:ty,z:tz+Math.sin(a)*.6})}}
+            hemi(4.75+Math.sin(1.2)*1.5,4.6,1.75*.4+.5,.6,4);
+            for(let y=-3;y<0;y+=.55){const s=1+y*.04;
+                for(let x=-4.25*s;x<=4.25*s;x+=.75){pts.push({x,y,z:1.75*s});pts.push({x,y,z:-1.75*s})}}
             return pts;
         }
         const FPTS=buildFinger();
-
-        let groups=[];
-        let gid=0;
+        let groups=[];let gid=0;
 
         function spawnFinger(wx,wy,wz){
-            const id=gid++;
-            const gp=[];
-
+            const id=gid++;const gp=[];
             for(const pt of FPTS){
                 if(P.length>=MAX-1500)break;
                 const h=(pt.y+3)/25;
-                const r=0.92+Math.random()*0.08;
-                const g=0.06+h*0.22+Math.random()*0.04;
-                const b=0.01+h*0.03+Math.random()*0.02;
-
+                const col=fingerColor(h);
                 const p={
-                    x:0,y:0,z:0,
-                    tx:wx+pt.x,ty:wy+pt.y,tz:wz+pt.z,
+                    x:0,y:0,z:0,tx:wx+pt.x,ty:wy+pt.y,tz:wz+pt.z,
                     vx:0,vy:0,vz:0,
-                    r,g,b,baseR:r,baseG:g,baseB:b,
-                    size:0.7+Math.random()*0.2,
-                    life:999,maxLife:999,decay:0,grav:0,
+                    r:col.r,g:col.g,b:col.b,baseR:col.r,baseG:col.g,baseB:col.b,
+                    size:.7+Math.random()*.2,life:999,maxLife:999,decay:0,grav:0,
                     type:'finger',groupId:id,
-                    formDelay:Math.random()*0.8,formTimer:0,formed:false,
+                    formDelay:Math.random()*.8,formTimer:0,formed:false,
                     spawnAngle:Math.random()*Math.PI*2,
                     spawnDist:30+Math.random()*50,
-                    spawnH:(Math.random()-0.5)*40,
+                    spawnH:(Math.random()-.5)*40,
                     shimmer:Math.random()*Math.PI*2,
-                    spin:(Math.random()-0.5)*0.05,
-                    rotX:0,rotY:0,
+                    spin:(Math.random()-.5)*.05,rotX:0,rotY:0,
                     pulseOffset:Math.random()*Math.PI*2
                 };
                 p.x=p.tx+Math.cos(p.spawnAngle)*p.spawnDist;
                 p.y=p.ty+p.spawnH;
                 p.z=p.tz+Math.sin(p.spawnAngle)*p.spawnDist;
-                P.push(p);
-                gp.push(p);
+                P.push(p);gp.push(p);
             }
 
-            // Vortex inward sparks
+            // Spiral inward sparks
             for(let i=0;i<400;i++){
-                const a1=Math.random()*Math.PI*2;
-                const a2=(Math.random()-0.5)*Math.PI;
+                const a1=Math.random()*Math.PI*2;const a2=(Math.random()-.5)*Math.PI;
                 const dist=25+Math.random()*40;
                 const sx=wx+Math.cos(a1)*Math.cos(a2)*dist;
                 const sy=wy+10+Math.sin(a2)*dist;
                 const sz=wz+Math.sin(a1)*Math.cos(a2)*dist;
                 const dx=wx-sx,dy=wy+10-sy,dz=wz-sz;
                 const dl=Math.sqrt(dx*dx+dy*dy+dz*dz)+.01;
-                const sp=1.5+Math.random()*1;
-                // Add tangential component for spiral
-                const tx=-dz/dl,tz=dx/dl;
-                addP(sx,sy,sz,dx/dl*sp+tx*0.8,dy/dl*sp,dz/dl*sp+tz*0.8,
-                    1,0.2+Math.random()*0.15,0.02,
-                    0.2+Math.random()*0.2,1.5+Math.random()*1.5,0.01,0,'spark');
+                const sp=1.5+Math.random();
+                const tanx=-dz/dl,tanz=dx/dl;
+                const c=fxColor();
+                addP(sx,sy,sz,dx/dl*sp+tanx*.8,dy/dl*sp,dz/dl*sp+tanz*.8,
+                    c.r,c.g,c.b,.2+Math.random()*.2,1.5+Math.random()*1.5,.01,0,'spark');
             }
 
-            // Ground shockwave
+            // Ground ring
             for(let i=0;i<120;i++){
-                const a=(i/120)*Math.PI*2;
-                const sp=2+Math.random()*0.8;
-                addP(wx,wy-2,wz,Math.cos(a)*sp,0.05+Math.random()*0.15,Math.sin(a)*sp,
-                    1,0.15,0.01,0.35,1.5+Math.random()*0.5,0.014,0.005,'ring');
+                const a=(i/120)*Math.PI*2;const sp=2+Math.random()*.8;const c=fxColor();
+                addP(wx,wy-2,wz,Math.cos(a)*sp,.05+Math.random()*.15,Math.sin(a)*sp,
+                    c.r,c.g,c.b,.35,1.5+Math.random()*.5,.014,.005,'ring');
             }
 
-            // Energy pillar
+            // Pillar
             for(let i=0;i<150;i++){
-                const yy=wy-8+Math.random()*35;
-                addP(wx+(Math.random()-0.5)*2,yy,wz+(Math.random()-0.5)*2,
-                    (Math.random()-0.5)*0.15,1.5+Math.random()*3,(Math.random()-0.5)*0.15,
-                    1,0.35+Math.random()*0.2,0.03,
-                    0.15+Math.random()*0.15,1+Math.random()*1.2,0.013,-0.015,'beam');
+                const yy=wy-8+Math.random()*35;const c=fxColor();
+                addP(wx+(Math.random()-.5)*2,yy,wz+(Math.random()-.5)*2,
+                    (Math.random()-.5)*.15,1.5+Math.random()*3,(Math.random()-.5)*.15,
+                    c.r,c.g,c.b,.15+Math.random()*.15,1+Math.random()*1.2,.013,-.015,'beam');
             }
 
             // Radial burst
             for(let i=0;i<60;i++){
-                const a=Math.random()*Math.PI*2;
-                const el=(Math.random()-0.5)*Math.PI*0.6;
-                const sp=3+Math.random()*2;
-                addP(wx,wy+10,wz,
-                    Math.cos(a)*Math.cos(el)*sp,Math.sin(el)*sp,Math.sin(a)*Math.cos(el)*sp,
-                    1,0.4,0.05,0.25+Math.random()*0.15,0.8+Math.random()*0.8,0.018,0.01,'burst');
+                const a=Math.random()*Math.PI*2;const el=(Math.random()-.5)*Math.PI*.6;
+                const sp=3+Math.random()*2;const c=fxColor();
+                addP(wx,wy+10,wz,Math.cos(a)*Math.cos(el)*sp,Math.sin(el)*sp,Math.sin(a)*Math.cos(el)*sp,
+                    c.r,c.g,c.b,.25+Math.random()*.15,.8+Math.random()*.8,.018,.01,'burst');
             }
 
-            screenShake(12);
-            doFlash('spawn');
+            screenShake(12);doFlash('spawn');
 
             groups.push({id,center:new THREE.Vector3(wx,wy+10,wz),particles:gp,
-                state:'forming',timer:0,aliveTime:0,pulsePhase:0,emberTimer:0,
-                orbitAngle:0,intensity:0});
+                state:'forming',timer:0,aliveTime:0,pulsePhase:0,emberTimer:0,orbitAngle:0,intensity:0});
             return new THREE.Vector3(wx,wy+10,wz);
         }
 
         function explodeGroup(group){
             if(group.state==='exploding'||group.state==='dead')return;
-            group.state='exploding';
-            group.timer=0;
-
+            group.state='exploding';group.timer=0;
             const cx=group.center.x,cy=group.center.y,cz=group.center.z;
-            screenShake(25);
-            doFlash('explode');
+            screenShake(25);doFlash('explode');
 
-            // Implode first frame
+            // Implode
             for(const p of group.particles){
                 if(p.life<=0)continue;
                 p.type='imploding';
                 const dx=cx-p.x,dy=cy-p.y,dz=cz-p.z;
                 const dl=Math.sqrt(dx*dx+dy*dy+dz*dz)+.01;
                 p.vx=dx/dl*3;p.vy=dy/dl*3;p.vz=dz/dl*3;
-                p.grav=0;p.decay=0;
-                p.maxLife=p.life=0.25+Math.random()*0.1;
-                p.implodeTimer=0;
-                p.r=1;p.g=1;p.b=0.9;
+                p.grav=0;p.decay=0;p.maxLife=p.life=.25+Math.random()*.1;
+                p.r=1;p.g=1;p.b=.9;
             }
 
-            // Schedule explosion after implode
             setTimeout(()=>{
-                screenShake(35);
-                doFlash('explode');
+                screenShake(35);doFlash('explode');
 
-                // Massive outward explosion
                 for(let wave=0;wave<4;wave++){
                     const count=250-wave*40;
                     for(let i=0;i<count;i++){
-                        const a1=Math.random()*Math.PI*2;
-                        const a2=(Math.random()-0.5)*Math.PI;
-                        const sp=(2+wave*1.2)+Math.random()*(4-wave*0.5);
-                        addP(cx+(Math.random()-0.5)*2,cy+(Math.random()-0.5)*2,cz+(Math.random()-0.5)*2,
+                        const a1=Math.random()*Math.PI*2;const a2=(Math.random()-.5)*Math.PI;
+                        const sp=(2+wave*1.2)+Math.random()*(4-wave*.5);
+                        const c=fxColor();
+                        addP(cx+(Math.random()-.5)*2,cy+(Math.random()-.5)*2,cz+(Math.random()-.5)*2,
                             Math.cos(a1)*Math.cos(a2)*sp,Math.sin(a2)*sp+Math.random(),Math.sin(a1)*Math.cos(a2)*sp,
-                            1,0.1+Math.random()*0.25,0.02+Math.random()*0.03,
-                            0.2+Math.random()*0.4,2+Math.random()*3,0.006+Math.random()*0.005,
-                            0.012+Math.random()*0.008,'debris');
+                            c.r,c.g,c.b,.2+Math.random()*.4,2+Math.random()*3,.006+Math.random()*.005,.012+Math.random()*.008,'debris');
                     }
                 }
 
-                // Multiple shockwave rings
                 for(let ring=0;ring<4;ring++){
-                    const n=100-ring*15;
-                    const sp=3+ring*2;
+                    const n=100-ring*15;const sp=3+ring*2;
                     for(let i=0;i<n;i++){
-                        const a=(i/n)*Math.PI*2;
-                        addP(cx,cy+ring*3-3,cz,
-                            Math.cos(a)*sp,(Math.random()-0.5)*0.3,Math.sin(a)*sp,
-                            1,0.2+ring*0.05,0.02,
-                            0.45-ring*0.08,1+Math.random()*0.5,0.018,0,'ring');
+                        const a=(i/n)*Math.PI*2;const c=fxColor();
+                        addP(cx,cy+ring*3-3,cz,Math.cos(a)*sp,(Math.random()-.5)*.3,Math.sin(a)*sp,
+                            c.r,c.g,c.b,.45-ring*.08,1+Math.random()*.5,.018,0,'ring');
                     }
                 }
 
-                // Fire column
                 for(let i=0;i<200;i++){
-                    addP(cx+(Math.random()-0.5)*6,cy-5+Math.random()*8,cz+(Math.random()-0.5)*6,
-                        (Math.random()-0.5)*1,3+Math.random()*5,(Math.random()-0.5)*1,
-                        1,0.4+Math.random()*0.3,0.03+Math.random()*0.05,
-                        0.15+Math.random()*0.25,1.5+Math.random()*2.5,0.008,-0.01,'fire');
+                    const c=fxColor();
+                    addP(cx+(Math.random()-.5)*6,cy-5+Math.random()*8,cz+(Math.random()-.5)*6,
+                        (Math.random()-.5)*1,3+Math.random()*5,(Math.random()-.5)*1,
+                        c.r,c.g,c.b,.15+Math.random()*.25,1.5+Math.random()*2.5,.008,-.01,'fire');
                 }
 
-                // Falling embers
                 for(let i=0;i<150;i++){
-                    const a=Math.random()*Math.PI*2;
-                    const dist=Math.random()*20;
+                    const a=Math.random()*Math.PI*2;const dist=Math.random()*20;
+                    const c=fxColor();
                     addP(cx+Math.cos(a)*dist,cy+8+Math.random()*20,cz+Math.sin(a)*dist,
-                        (Math.random()-0.5)*0.4,-0.3-Math.random()*0.6,(Math.random()-0.5)*0.4,
-                        1,0.12+Math.random()*0.12,0.01,
-                        0.1+Math.random()*0.1,4+Math.random()*4,0.003,0.008,'ember');
+                        (Math.random()-.5)*.4,-.3-Math.random()*.6,(Math.random()-.5)*.4,
+                        c.r,c.g,c.b,.1+Math.random()*.1,4+Math.random()*4,.003,.008,'ember');
                 }
 
-                // Ground sparks bouncing
                 for(let i=0;i<100;i++){
-                    const a=Math.random()*Math.PI*2;
-                    const sp=1+Math.random()*3;
-                    addP(cx+Math.cos(a)*2,cy-8,cz+Math.sin(a)*2,
-                        Math.cos(a)*sp,1+Math.random()*2.5,Math.sin(a)*sp,
-                        1,0.35,0.02,
-                        0.12+Math.random()*0.08,1.5+Math.random()*1.5,0.012,0.025,'gspark');
+                    const a=Math.random()*Math.PI*2;const sp=1+Math.random()*3;const c=fxColor();
+                    addP(cx+Math.cos(a)*2,cy-8,cz+Math.sin(a)*2,Math.cos(a)*sp,1+Math.random()*2.5,Math.sin(a)*sp,
+                        c.r,c.g,c.b,.12+Math.random()*.08,1.5+Math.random()*1.5,.012,.025,'gspark');
                 }
 
-                // Smoke puffs (dark particles)
                 for(let i=0;i<80;i++){
-                    const a=Math.random()*Math.PI*2;
-                    const sp=0.3+Math.random()*1;
-                    addP(cx+Math.cos(a)*5,cy+(Math.random()-0.5)*10,cz+Math.sin(a)*5,
-                        Math.cos(a)*sp,0.5+Math.random()*1,Math.sin(a)*sp,
-                        0.15,0.05,0.02,
-                        0.5+Math.random()*0.5,3+Math.random()*3,0.005,-0.003,'smoke');
+                    const a=Math.random()*Math.PI*2;const sp=.3+Math.random();
+                    addP(cx+Math.cos(a)*5,cy+(Math.random()-.5)*10,cz+Math.sin(a)*5,
+                        Math.cos(a)*sp,.5+Math.random(),Math.sin(a)*sp,
+                        .15,.05,.02,.5+Math.random()*.5,3+Math.random()*3,.005,-.003,'smoke');
                 }
 
-                // Secondary flash sparks
                 for(let i=0;i<40;i++){
-                    const a=Math.random()*Math.PI*2;
-                    const el=(Math.random()-0.5)*Math.PI;
+                    const a=Math.random()*Math.PI*2;const el=(Math.random()-.5)*Math.PI;
                     const sp=5+Math.random()*5;
-                    addP(cx,cy,cz,
-                        Math.cos(a)*Math.cos(el)*sp,Math.sin(el)*sp,Math.sin(a)*Math.cos(el)*sp,
-                        1,0.9,0.8,
-                        0.15,0.5+Math.random()*0.3,0.035,0.02,'flashspark');
+                    addP(cx,cy,cz,Math.cos(a)*Math.cos(el)*sp,Math.sin(el)*sp,Math.sin(a)*Math.cos(el)*sp,
+                        1,.9,.8,.15,.5+Math.random()*.3,.035,.02,'flashspark');
                 }
             },280);
         }
 
-        // Camera
+        // Camera — always face front of finger
         let camTarget=new THREE.Vector3(0,8,0);
-        let camGoalPos=new THREE.Vector3(0,18,50);
-        let camAngle=0;
+        let camGoalPos=new THREE.Vector3(0,14,40);
         let lastDetect=0;
+        // Fixed front-facing angle with slight gentle sway
+        let camSwayPhase=0;
 
         function aimCamera(t){
-            camAngle=Math.atan2(camera.position.x-t.x,camera.position.z-t.z);
-            camGoalPos.set(t.x+Math.sin(camAngle)*30,t.y+12,t.z+Math.cos(camAngle)*30);
             camTarget.copy(t);
             lastDetect=performance.now();
         }
 
         // ── HAND DETECTION ───────────────────────────────────────
-        let detected=false;
-        let fingerNorm={x:0.5,y:0.5};
-        let spawnCD=0;
-        let wasDetected=false;
-        let detectFrames=0;
-        let lostFrames=0;
+        let detected=false;let fingerNorm={x:.5,y:.5};let spawnCD=0;
+        let wasDetected=false;let detectFrames=0;let lostFrames=0;
 
         const HC=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
             [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
@@ -529,7 +390,7 @@
                 y:(lm[0].y+lm[5].y+lm[9].y+lm[13].y+lm[17].y)/5,
                 z:((lm[0].z||0)+(lm[5].z||0)+(lm[9].z||0)+(lm[13].z||0)+(lm[17].z||0))/5};
             function ext(t,d,p,m){return d3(t,w)>d3(m,w)*1.1&&d3(t,palm)>d3(m,palm)*1.15&&d3(t,m)>d3(p,m)*1.4}
-            function curl(t,d,p,m){return d3(t,w)<d3(m,w)*1.15||d3(t,palm)<d3(m,palm)*0.95||d3(t,m)<d3(p,m)*1.2}
+            function curl(t,d,p,m){return d3(t,w)<d3(m,w)*1.15||d3(t,palm)<d3(m,palm)*.95||d3(t,m)<d3(p,m)*1.2}
             const mE=ext(lm[12],lm[11],lm[10],lm[9]);
             const iC=curl(lm[8],lm[7],lm[6],lm[5]);
             const rC=curl(lm[16],lm[15],lm[14],lm[13]);
@@ -540,10 +401,10 @@
         }
 
         const hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`});
-        hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:0.65,minTrackingConfidence:0.5});
+        hands.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:.65,minTrackingConfidence:.5});
         hands.onResults(res=>{
             dbgCtx.clearRect(0,0,dbgCanvas.width,dbgCanvas.height);
-            dbgCtx.globalAlpha=0.2;dbgCtx.drawImage(res.image,0,0,dbgCanvas.width,dbgCanvas.height);dbgCtx.globalAlpha=1;
+            dbgCtx.globalAlpha=.2;dbgCtx.drawImage(res.image,0,0,dbgCanvas.width,dbgCanvas.height);dbgCtx.globalAlpha=1;
             let raw=false;
             if(res.multiHandLandmarks)for(const lm of res.multiHandLandmarks){const is=checkMF(lm);drawDebug(lm,is);if(is){raw=true;fingerNorm={x:1-lm[12].x,y:lm[12].y}}}
             if(raw){detectFrames++;lostFrames=0}else{lostFrames++;detectFrames=0}
@@ -554,143 +415,108 @@
         });
 
         async function startCam(){
-            try{
-                const s=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'}});
-                video.srcObject=s;
-                new Camera(video,{onFrame:async()=>await hands.send({image:video}),width:640,height:480}).start();
+            try{const s=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'}});
+                video.srcObject=s;new Camera(video,{onFrame:async()=>await hands.send({image:video}),width:640,height:480}).start();
                 loadingScreen.style.display='none';
             }catch(e){loadingScreen.innerHTML='<p style="color:#f55">Camera denied</p>'}
         }
 
         // ── LOOP ─────────────────────────────────────────────────
-        let prev=performance.now();
-        let activeGroup=null;
-        let globalTime=0;
+        let prev=performance.now();let activeGroup=null;let globalTime=0;
 
         function loop(){
             requestAnimationFrame(loop);
-            const now=performance.now();
-            const dt=Math.min((now-prev)/1000,0.05);
-            prev=now;
-            globalTime+=dt;
+            const now=performance.now();const dt=Math.min((now-prev)/1000,.05);prev=now;globalTime+=dt;
+            camSwayPhase+=dt;
 
-            // Spawn
             if(detected){
                 if(!activeGroup||activeGroup.state==='dead'||activeGroup.state==='exploding'){
                     spawnCD-=dt;
                     if(spawnCD<=0){
-                        const wx=(fingerNorm.x-0.5)*50;
-                        const wy=(0.5-fingerNorm.y)*35;
+                        const wx=(fingerNorm.x-.5)*50;const wy=(.5-fingerNorm.y)*35;
                         const t=spawnFinger(wx,wy,0);
                         activeGroup=groups[groups.length-1];
-                        aimCamera(t);
-                        spawnCD=0.5;
+                        aimCamera(t);spawnCD=.5;
                     }
                 }
                 wasDetected=true;
             }else{
-                if(wasDetected&&activeGroup&&activeGroup.state!=='exploding'&&activeGroup.state!=='dead'){
+                if(wasDetected&&activeGroup&&activeGroup.state!=='exploding'&&activeGroup.state!=='dead')
                     explodeGroup(activeGroup);
-                }
-                wasDetected=false;
-                spawnCD=0;
+                wasDetected=false;spawnCD=0;
             }
 
-            // Update groups
+            // Groups
             for(let gi=groups.length-1;gi>=0;gi--){
-                const g=groups[gi];
-                g.timer+=dt;
+                const g=groups[gi];g.timer+=dt;
 
                 if(g.state==='forming'){
                     let allDone=true;
                     for(const p of g.particles){
-                        if(p.life<=0)continue;
-                        p.formTimer+=dt;
+                        if(p.life<=0)continue;p.formTimer+=dt;
                         if(p.formTimer<p.formDelay){allDone=false;continue}
                         const t=Math.min(1,(p.formTimer-p.formDelay)*1.6);
-                        const ease=t===0?0:t===1?1:Math.pow(2,-10*t)*Math.sin((t*10-0.75)*(2*Math.PI)/3)+1;
+                        const ease=t===0?0:t===1?1:Math.pow(2,-10*t)*Math.sin((t*10-.75)*(2*Math.PI)/3)+1;
                         p.x=p.tx+(Math.cos(p.spawnAngle)*p.spawnDist)*(1-ease);
                         p.y=p.ty+p.spawnH*(1-ease);
                         p.z=p.tz+(Math.sin(p.spawnAngle)*p.spawnDist)*(1-ease);
-                        p.formed=ease>=0.98;
-                        p.size=(0.7+Math.random()*0.05)*Math.min(1,ease*1.5);
+                        p.formed=ease>=.98;
+                        p.size=(.7+Math.random()*.05)*Math.min(1,ease*1.5);
                         if(!p.formed)allDone=false;
-                        if(Math.random()<0.04&&P.length<MAX-200){
-                            addP(p.x,p.y,p.z,(Math.random()-0.5)*0.4,(Math.random()-0.5)*0.4,(Math.random()-0.5)*0.4,
-                                1,0.25,0.02,0.12,0.4+Math.random()*0.4,0.03,0,'trail');
+                        if(Math.random()<.04&&P.length<MAX-200){
+                            const c=fxColor();
+                            addP(p.x,p.y,p.z,(Math.random()-.5)*.4,(Math.random()-.5)*.4,(Math.random()-.5)*.4,
+                                c.r,c.g,c.b,.12,.4+Math.random()*.4,.03,0,'trail');
                         }
                     }
-                    // Ramp up light
                     g.intensity=Math.min(1,g.timer*1.5);
                     if(allDone||g.timer>2.5){
-                        g.state='alive';
-                        screenShake(8);
-                        doFlash('spawn');
+                        g.state='alive';screenShake(8);doFlash('spawn');
                         const c=g.center;
-                        for(let i=0;i<80;i++){
-                            const a=(i/80)*Math.PI*2;
-                            addP(c.x,c.y,c.z,Math.cos(a)*2,(Math.random()-0.5)*0.5,Math.sin(a)*2,
-                                1,0.3,0.03,0.3,0.6+Math.random()*0.4,0.025,0,'ring');
-                        }
+                        for(let i=0;i<80;i++){const a=(i/80)*Math.PI*2;const col=fxColor();
+                            addP(c.x,c.y,c.z,Math.cos(a)*2,(Math.random()-.5)*.5,Math.sin(a)*2,
+                                col.r,col.g,col.b,.3,.6+Math.random()*.4,.025,0,'ring')}
                     }
                 }
 
                 if(g.state==='alive'){
-                    g.pulsePhase+=dt*3;
-                    g.emberTimer+=dt;
-                    g.orbitAngle+=dt*1.5;
-                    g.intensity=1;
-
+                    g.pulsePhase+=dt*3;g.emberTimer+=dt;g.orbitAngle+=dt*1.5;g.intensity=1;
                     for(const p of g.particles){
-                        if(p.life<=0)continue;
-                        p.shimmer+=dt*3.5;
-                        const pulse=Math.sin(g.pulsePhase+p.pulseOffset)*0.15;
-                        const wave=Math.sin(p.shimmer*0.7+p.ty*0.3)*0.08;
-                        p.r=Math.min(1,p.baseR+pulse*0.3+0.05);
-                        p.g=Math.min(1,p.baseG+pulse*0.5+wave*0.3);
-                        p.b=Math.min(1,p.baseB+pulse*0.2+wave*0.15);
-                        const breathe=Math.sin(g.pulsePhase*0.4)*0.2;
-                        p.x=p.tx+Math.sin(p.shimmer*0.5)*0.12;
-                        p.y=p.ty+Math.sin(p.shimmer*0.35+1)*0.12+breathe;
-                        p.z=p.tz+Math.sin(p.shimmer*0.6+2)*0.12;
-                        p.size=0.72+Math.sin(p.shimmer+p.pulseOffset)*0.1;
+                        if(p.life<=0)continue;p.shimmer+=dt*3.5;
+                        const pulse=Math.sin(g.pulsePhase+p.pulseOffset)*.15;
+                        const wave=Math.sin(p.shimmer*.7+p.ty*.3)*.08;
+                        p.r=Math.min(1,p.baseR+pulse*.3+.05);
+                        p.g=Math.min(1,p.baseG+pulse*.5+wave*.3);
+                        p.b=Math.min(1,p.baseB+pulse*.2+wave*.15);
+                        const breathe=Math.sin(g.pulsePhase*.4)*.2;
+                        p.x=p.tx+Math.sin(p.shimmer*.5)*.12;
+                        p.y=p.ty+Math.sin(p.shimmer*.35+1)*.12+breathe;
+                        p.z=p.tz+Math.sin(p.shimmer*.6+2)*.12;
+                        p.size=.72+Math.sin(p.shimmer+p.pulseOffset)*.1;
                     }
-
-                    // Embers
-                    if(g.emberTimer>0.03){
-                        g.emberTimer=0;
-                        const c=g.center;
-                        for(let i=0;i<4;i++){
-                            if(P.length>=MAX-50)break;
-                            addP(c.x+(Math.random()-0.5)*9,c.y-10+Math.random()*22,c.z+(Math.random()-0.5)*5,
-                                (Math.random()-0.5)*0.2,0.4+Math.random()*0.6,(Math.random()-0.5)*0.2,
-                                1,0.1+Math.random()*0.1,0.01,
-                                0.08+Math.random()*0.07,2+Math.random()*2.5,0.006,-0.003,'ember');
-                        }
+                    if(g.emberTimer>.03){
+                        g.emberTimer=0;const c=g.center;
+                        for(let i=0;i<4;i++){if(P.length>=MAX-50)break;const col=fxColor();
+                            addP(c.x+(Math.random()-.5)*9,c.y-10+Math.random()*22,c.z+(Math.random()-.5)*5,
+                                (Math.random()-.5)*.2,.4+Math.random()*.6,(Math.random()-.5)*.2,
+                                col.r,col.g,col.b,.08+Math.random()*.07,2+Math.random()*2.5,.006,-.003,'ember')}
                     }
-
-                    // Orbiting sparks
                     if(P.length<MAX-20){
-                        for(let i=0;i<2;i++){
-                            const c=g.center;
-                            const oa=g.orbitAngle+i*Math.PI;
-                            const or=8+Math.sin(globalTime*2)*2;
-                            addP(c.x+Math.cos(oa)*or,c.y+Math.sin(globalTime*3+i)*5,c.z+Math.sin(oa)*or,
-                                -Math.sin(oa)*0.3,(Math.random()-0.5)*0.1,Math.cos(oa)*0.3,
-                                1,0.2,0.01,0.1,0.3+Math.random()*0.2,0.04,0,'orbit');
-                        }
+                        for(let i=0;i<2;i++){const c=g.center;const oa=g.orbitAngle+i*Math.PI;
+                            const or2=8+Math.sin(globalTime*2)*2;const col=fxColor();
+                            addP(c.x+Math.cos(oa)*or2,c.y+Math.sin(globalTime*3+i)*5,c.z+Math.sin(oa)*or2,
+                                -Math.sin(oa)*.3,(Math.random()-.5)*.1,Math.cos(oa)*.3,
+                                col.r,col.g,col.b,.1,.3+Math.random()*.2,.04,0,'orbit')}
                     }
                 }
 
                 if(g.state==='exploding'){
                     g.intensity=Math.max(0,g.intensity-dt*2);
-                    let any=false;
-                    for(const p of g.particles){if(p.life>0){any=true;break}}
+                    let any=false;for(const p of g.particles){if(p.life>0){any=true;break}}
                     if(!any&&g.timer>5)g.state='dead';
                 }
                 if(g.state==='dead')groups.splice(gi,1);
 
-                // Update finger light
                 if(g===activeGroup){
                     fingerLight.position.lerp(g.center,dt*5);
                     fingerLightTarget=g.intensity*3;
@@ -700,67 +526,66 @@
             fingerLight.intensity+=(fingerLightTarget-fingerLight.intensity)*dt*5;
             if(!activeGroup||activeGroup.state==='dead')fingerLightTarget=0;
 
-            // Bloom intensity
             const hasActive=activeGroup&&(activeGroup.state==='alive'||activeGroup.state==='forming');
-            const targetBloom=hasActive?2.0:0.8;
-            compositeMat.uniforms.bloomStrength.value+=(targetBloom-compositeMat.uniforms.bloomStrength.value)*dt*3;
+            const targetBloom=hasActive?2:0.8;
+            compMat.uniforms.bloomStrength.value+=(targetBloom-compMat.uniforms.bloomStrength.value)*dt*3;
 
-            // Camera
+            // CAMERA: always face front, gentle sway
             const idle=now-lastDetect>6000;
+            const sway=Math.sin(camSwayPhase*.3)*2.5;
+            const swayY=Math.sin(camSwayPhase*.2)*.8;
             if(idle){
-                camAngle+=dt*0.1;
-                camGoalPos.set(Math.sin(camAngle)*45,16,Math.cos(camAngle)*45);
-                camTarget.lerp(new THREE.Vector3(0,5,0),dt*0.3);
+                camTarget.lerp(new THREE.Vector3(0,5,0),dt*.3);
+                const frontDist=38;
+                camGoalPos.set(camTarget.x+sway,camTarget.y+14+swayY,camTarget.z+frontDist);
             }else{
-                camAngle+=dt*0.15;
-                camGoalPos.set(camTarget.x+Math.sin(camAngle)*30,camTarget.y+12,camTarget.z+Math.cos(camAngle)*30);
+                const frontDist=35;
+                camGoalPos.set(camTarget.x+sway,camTarget.y+10+swayY,camTarget.z+frontDist);
             }
-            camera.position.lerp(camGoalPos,dt*2);
+            camera.position.lerp(camGoalPos,dt*2.5);
 
-            shakeAmount*=0.9;
-            if(shakeAmount<0.01)shakeAmount=0;
+            shakeAmount*=.9;if(shakeAmount<.01)shakeAmount=0;
             const st=camTarget.clone();
-            st.x+=(Math.random()-0.5)*shakeAmount;
-            st.y+=(Math.random()-0.5)*shakeAmount;
+            st.x+=(Math.random()-.5)*shakeAmount;
+            st.y+=(Math.random()-.5)*shakeAmount;
             camera.lookAt(st);
 
-            // Update particles
+            // Particles
             let alive=0;
             for(let i=P.length-1;i>=0;i--){
                 const p=P[i];
-
                 if(p.type==='finger'){
-                    // handled by group
+                    // group handles position
                 }else if(p.type==='imploding'){
                     p.x+=p.vx*dt*60;p.y+=p.vy*dt*60;p.z+=p.vz*dt*60;
-                    p.life-=dt;
-                    if(p.life<=0){p.life=0}
-                    p.size=0.6*(p.life/p.maxLife);
+                    p.life-=dt;if(p.life<=0)p.life=0;
+                    p.size=.6*(p.life/p.maxLife);
                 }else if(p.type==='exploding'){
                     p.x+=p.vx;p.y+=p.vy;p.z+=p.vz;
-                    p.vy-=p.grav;p.vx*=0.97;p.vy*=0.97;p.vz*=0.97;
+                    p.vy-=p.grav;p.vx*=.97;p.vy*=.97;p.vz*=.97;
                     p.life-=p.decay;
                     const f=p.life/p.maxLife;
-                    p.r=1;p.g=Math.max(0,f*0.7);p.b=Math.max(0,f*0.4-0.1);
+                    p.r=1;p.g=Math.max(0,f*.7);p.b=Math.max(0,f*.4-.1);
                     p.rotX+=p.spin;p.rotY+=p.spin*1.3;
                 }else{
                     p.x+=p.vx;p.y+=p.vy;p.z+=p.vz;
-                    p.vy-=p.grav;p.vx*=0.995;p.vz*=0.995;
-                    p.life-=p.decay;
-                    p.rotX+=p.spin;p.rotY+=p.spin*0.7;
+                    p.vy-=p.grav;p.vx*=.995;p.vz*=.995;
+                    p.life-=p.decay;p.rotX+=p.spin;p.rotY+=p.spin*.7;
                 }
-
                 if(p.life<=0){P.splice(i,1);continue}
 
                 const f=p.type==='finger'?1:Math.max(0,p.life/p.maxLife);
-                const s=p.size*(p.type==='finger'?1:(0.15+f*0.85));
-
+                const s=p.size*(p.type==='finger'?1:(.15+f*.85));
                 dum.position.set(p.x,p.y,p.z);
-                dum.scale.setScalar(Math.max(0.01,s));
+                dum.scale.setScalar(Math.max(.01,s));
                 dum.rotation.set(p.rotX||0,p.rotY||0,0);
                 dum.updateMatrix();
                 imesh.setMatrixAt(alive,dum.matrix);
-                tc.setRGB(Math.min(1,p.r*(p.type==='finger'?1:f)),Math.min(1,p.g*(p.type==='finger'?1:f)),Math.min(1,p.b*(p.type==='finger'?1:f)));
+
+                const cr=p.type==='finger'?p.r:p.r*f;
+                const cg=p.type==='finger'?p.g:p.g*f;
+                const cb=p.type==='finger'?p.b:p.b*f;
+                tc.setRGB(Math.min(1,cr),Math.min(1,cg),Math.min(1,cb));
                 imesh.setColorAt(alive,tc);
                 alive++;
             }
@@ -773,11 +598,10 @@
             imesh.instanceMatrix.needsUpdate=true;
             if(imesh.instanceColor)imesh.instanceColor.needsUpdate=true;
 
-            composer.render();
+            renderWithBloom();
         }
 
-        loop();
-        startCam();
+        loop();startCam();
     })();
     </script>
 </body>
