@@ -6,34 +6,45 @@
     <title>3D Middle Finger Particles</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #111; overflow: hidden; font-family: Arial, sans-serif; }
+        body { background: #000; overflow: hidden; font-family: Arial, sans-serif; }
         canvas { display: block; }
         #video {
-            position: fixed; bottom: 15px; right: 15px; width: 180px; height: 135px;
+            position: fixed; bottom: 15px; right: 15px; width: 220px; height: 165px;
             border: 2px solid #333; border-radius: 6px; z-index: 20;
-            transform: scaleX(-1); object-fit: cover;
+            transform: scaleX(-1); object-fit: cover; opacity: 0.9;
+        }
+        #debugCanvas {
+            position: fixed; bottom: 15px; left: 15px; width: 220px; height: 165px;
+            border: 2px solid #444; border-radius: 6px; z-index: 20; background: #000;
         }
         #status {
             position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
-            color: #ccc; font-size: 15px; z-index: 30; text-align: center;
-            background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 6px;
+            color: #888; font-size: 14px; z-index: 30; text-align: center;
+            background: rgba(0,0,0,0.8); padding: 6px 14px; border-radius: 6px;
+            border: 1px solid #333;
         }
-        #status.active { color: #f55; }
+        #status.active { color: #ff2090; border-color: #ff2090; }
+        #count {
+            position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%);
+            color: #444; font-size: 11px; z-index: 30;
+        }
         .loading {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-            color: #ccc; font-size: 20px; z-index: 100; text-align: center;
+            color: #888; font-size: 18px; z-index: 100; text-align: center;
         }
         .spinner {
-            border: 3px solid #333; border-top: 3px solid #ccc; border-radius: 50%;
+            border: 3px solid #222; border-top: 3px solid #ff2090; border-radius: 50%;
             width: 36px; height: 36px; animation: s 1s linear infinite; margin: 12px auto;
         }
         @keyframes s { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-    <div id="loadingScreen" class="loading"><div class="spinner"></div><p>Loading...</p></div>
+    <div id="loadingScreen" class="loading"><div class="spinner"></div><p>Loading hand tracking...</p></div>
     <video id="video" autoplay playsinline></video>
+    <canvas id="debugCanvas"></canvas>
     <div id="status">Show your middle finger 🖕</div>
+    <div id="count"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"></script>
@@ -43,11 +54,15 @@
     (function () {
         const video = document.getElementById('video');
         const statusEl = document.getElementById('status');
+        const countEl = document.getElementById('count');
         const loadingScreen = document.getElementById('loadingScreen');
+        const dbgCanvas = document.getElementById('debugCanvas');
+        const dbgCtx = dbgCanvas.getContext('2d');
+        dbgCanvas.width = 320; dbgCanvas.height = 240;
 
-        // ── THREE SETUP ──────────────────────────────────────────
+        // ── THREE ────────────────────────────────────────────────
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111118);
+        scene.background = new THREE.Color(0x000000);
 
         const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
         camera.position.set(0, 15, 55);
@@ -55,6 +70,7 @@
         const renderer = new THREE.WebGLRenderer({ antialias: false });
         renderer.setSize(innerWidth, innerHeight);
         renderer.setPixelRatio(1);
+        renderer.shadowMap.enabled = false;
         document.body.prepend(renderer.domElement);
 
         window.addEventListener('resize', () => {
@@ -63,130 +79,240 @@
             renderer.setSize(innerWidth, innerHeight);
         });
 
-        // Simple directional light + ambient
-        scene.add(new THREE.AmbientLight(0x888888));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-        dirLight.position.set(5, 20, 10);
-        scene.add(dirLight);
+        // No shadows, just flat pink lit particles
+        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
-        // Grid
-        const grid = new THREE.GridHelper(160, 30, 0x333333, 0x222222);
-        grid.position.y = -18;
-        scene.add(grid);
-
-        // ── INSTANCED MESH (single draw call, same geometry) ─────
-        const SPHERE = new THREE.IcosahedronGeometry(0.35, 0);
-        const MAT = new THREE.MeshLambertMaterial({ color: 0xdddddd });
-        const MAX = 15000;
-        const mesh = new THREE.InstancedMesh(SPHERE, MAT, MAX);
+        // ── INSTANCED MESH ───────────────────────────────────────
+        const GEO = new THREE.IcosahedronGeometry(0.32, 0);
+        const MAT = new THREE.MeshBasicMaterial({ color: 0xffffff }); // color set per instance
+        const MAX = 18000;
+        const mesh = new THREE.InstancedMesh(GEO, MAT, MAX);
         mesh.count = 0;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
         scene.add(mesh);
 
         const dummy = new THREE.Object3D();
-        const tmpColor = new THREE.Color();
+        const tmpC = new THREE.Color();
 
-        // Particle data
-        const P = []; // {x,y,z,vx,vy,vz,life,decay,grav,r,g,b}
+        const P = [];
 
         function addP(x, y, z, vx, vy, vz, r, g, b, life, decay, grav) {
             if (P.length >= MAX) return;
             P.push({ x, y, z, vx, vy, vz, r, g, b, life, maxLife: life, decay, grav });
         }
 
-        // ── MIDDLE FINGER POINT CLOUD ────────────────────────────
-        function fingerPoints() {
+        // ── DETAILED MIDDLE FINGER POINTS ────────────────────────
+        function buildFingerPoints() {
             const pts = [];
 
-            // Middle finger shaft
-            for (let y = 0; y < 15; y += 0.9) {
-                const n = 8;
-                for (let i = 0; i < n; i++) {
-                    const a = (i / n) * Math.PI * 2;
-                    const r = 1.6;
-                    pts.push({ x: Math.cos(a) * r, y: y + 6, z: Math.sin(a) * r });
+            // Helper: cylinder ring
+            function ring(cx, cy, cz, radius, count) {
+                for (let i = 0; i < count; i++) {
+                    const a = (i / count) * Math.PI * 2;
+                    pts.push({ x: cx + Math.cos(a) * radius, y: cy, z: cz + Math.sin(a) * radius });
                 }
             }
 
-            // Fingertip hemisphere
-            for (let p = 0; p < Math.PI / 2; p += 0.4) {
-                const n = Math.max(4, Math.floor(8 * Math.cos(p)));
-                for (let i = 0; i < n; i++) {
-                    const a = (i / n) * Math.PI * 2;
-                    const r = 1.6 * Math.cos(p);
-                    pts.push({ x: Math.cos(a) * r, y: 21 + Math.sin(p) * 1.6, z: Math.sin(a) * r });
-                }
-            }
-
-            // Fist block
-            for (let y = 0; y < 5; y += 1.0) {
-                for (let x = -4.5; x <= 4.5; x += 1.0) {
-                    for (let z = -1.8; z <= 1.8; z += 1.0) {
-                        pts.push({ x, y: y * 0.9, z });
+            // Helper: filled disc
+            function disc(cx, cy, cz, radius, rings, ptsPerRing) {
+                for (let r = 0; r <= rings; r++) {
+                    const rad = (r / rings) * radius;
+                    const n = Math.max(1, Math.floor(ptsPerRing * (r / rings)));
+                    for (let i = 0; i < n; i++) {
+                        const a = (i / n) * Math.PI * 2;
+                        pts.push({ x: cx + Math.cos(a) * rad, y: cy, z: cz + Math.sin(a) * rad });
                     }
                 }
             }
 
-            // Curled finger bumps
-            for (const fx of [-3.2, -1.2, 1.2, 3.2]) {
-                for (let a = 0; a < Math.PI; a += 0.5) {
-                    const r = 1.0;
-                    pts.push({ x: fx + Math.cos(a + Math.PI) * r, y: 5 + Math.sin(a + Math.PI) * r, z: 0 });
-                    pts.push({ x: fx + Math.cos(a + Math.PI) * r, y: 5 + Math.sin(a + Math.PI) * r, z: 1 });
-                    pts.push({ x: fx + Math.cos(a + Math.PI) * r, y: 5 + Math.sin(a + Math.PI) * r, z: -1 });
+            // Middle finger - detailed cylinder with rings
+            const fingerRadius = 1.4;
+            const fingerBase = 6;
+            const fingerTop = 22;
+            for (let y = fingerBase; y <= fingerTop; y += 0.6) {
+                // Slight taper near tip
+                const t = (y - fingerBase) / (fingerTop - fingerBase);
+                const r = fingerRadius * (1.0 - t * 0.15);
+                ring(0, y, 0, r, 10);
+                // Fill cross section every few rings
+                if (Math.floor(y * 10) % 3 === 0) {
+                    ring(0, y, 0, r * 0.5, 5);
+                    pts.push({ x: 0, y, z: 0 });
                 }
             }
 
-            // Thumb
-            for (let t = 0; t < 7; t++) {
-                const ty = 1 + t * 0.7;
-                const tx = 5 + Math.sin(t * 0.3) * 1.2;
-                for (let i = 0; i < 5; i++) {
-                    const a = (i / 5) * Math.PI * 2;
-                    pts.push({ x: tx + Math.cos(a) * 0.9, y: ty, z: Math.sin(a) * 0.9 });
+            // Fingertip dome
+            for (let phi = 0; phi < Math.PI / 2; phi += 0.25) {
+                const r = fingerRadius * 0.85 * Math.cos(phi);
+                const n = Math.max(3, Math.floor(10 * Math.cos(phi)));
+                for (let i = 0; i < n; i++) {
+                    const a = (i / n) * Math.PI * 2;
+                    pts.push({
+                        x: Math.cos(a) * r,
+                        y: fingerTop + Math.sin(phi) * fingerRadius * 0.85,
+                        z: Math.sin(a) * r
+                    });
+                }
+            }
+            pts.push({ x: 0, y: fingerTop + fingerRadius * 0.85, z: 0 });
+
+            // Fingernail (flat patch on back)
+            for (let y = fingerTop - 3; y <= fingerTop; y += 0.5) {
+                for (let x = -0.8; x <= 0.8; x += 0.4) {
+                    pts.push({ x, y, z: -fingerRadius - 0.15 });
+                }
+            }
+
+            // Knuckle bump at base of middle finger
+            for (let a = 0; a < Math.PI; a += 0.3) {
+                const r = 2.0;
+                ring(0, fingerBase + Math.sin(a) * 0.8, 0, fingerRadius + Math.cos(a) * 0.4, 8);
+            }
+
+            // ── FIST / PALM ──
+            const fistW = 5.5;
+            const fistD = 2.5;
+            const fistH = 6;
+
+            // Front and back faces
+            for (let y = 0; y < fistH; y += 0.7) {
+                for (let x = -fistW; x <= fistW; x += 0.9) {
+                    pts.push({ x, y, z: fistD });
+                    pts.push({ x, y, z: -fistD });
+                }
+            }
+            // Top and bottom faces
+            for (let x = -fistW; x <= fistW; x += 0.9) {
+                for (let z = -fistD; z <= fistD; z += 0.9) {
+                    pts.push({ x, y: 0, z });
+                    pts.push({ x, y: fistH, z });
+                }
+            }
+            // Side faces
+            for (let y = 0; y < fistH; y += 0.7) {
+                for (let z = -fistD; z <= fistD; z += 0.9) {
+                    pts.push({ x: -fistW, y, z });
+                    pts.push({ x: fistW, y, z });
+                }
+            }
+            // Some fill inside fist
+            for (let y = 1; y < fistH - 1; y += 1.5) {
+                for (let x = -fistW + 1; x <= fistW - 1; x += 2) {
+                    for (let z = -fistD + 1; z <= fistD - 1; z += 2) {
+                        pts.push({ x, y, z });
+                    }
+                }
+            }
+
+            // ── CURLED FINGERS (index, ring, pinky) ──
+            // Each curled finger is a small curved tube on top of the fist
+            const curledFingerX = [-4.0, -1.8, 1.8, 4.0];
+            for (const fx of curledFingerX) {
+                // Curved tube: goes up then curls forward
+                for (let t = 0; t < Math.PI * 0.8; t += 0.2) {
+                    const cy = fistH + Math.sin(t) * 2.0;
+                    const cz = -Math.cos(t) * 2.0 + 1.0;
+                    const n = 6;
+                    for (let i = 0; i < n; i++) {
+                        const a = (i / n) * Math.PI * 2;
+                        const tubeR = 0.7;
+                        // Rotate tube cross-section to follow curve
+                        const nx = Math.cos(a) * tubeR;
+                        const perpY = Math.cos(t);
+                        const perpZ = Math.sin(t);
+                        pts.push({
+                            x: fx + nx,
+                            y: cy + perpY * Math.sin(a) * tubeR,
+                            z: cz + perpZ * Math.sin(a) * tubeR
+                        });
+                    }
+                }
+                // Fingertip cap
+                disc(fx, fistH + Math.sin(Math.PI * 0.8) * 2.0,
+                     -Math.cos(Math.PI * 0.8) * 2.0 + 1.0, 0.7, 2, 5);
+            }
+
+            // ── THUMB ──
+            // Thumb wraps around the front of the fist
+            for (let t = 0; t < 10; t++) {
+                const progress = t / 10;
+                const tx = fistW + 0.5 + Math.sin(progress * Math.PI * 0.6) * 1.5;
+                const ty = 0.5 + progress * 3.5;
+                const tz = fistD * (1.0 - progress * 0.5);
+                const n = 6;
+                for (let i = 0; i < n; i++) {
+                    const a = (i / n) * Math.PI * 2;
+                    const tr = 0.9 - progress * 0.1;
+                    pts.push({
+                        x: tx + Math.cos(a) * tr,
+                        y: ty + Math.sin(a) * tr * 0.5,
+                        z: tz + Math.sin(a) * tr
+                    });
+                }
+            }
+            // Thumb tip
+            const ttx = fistW + 0.5 + Math.sin(Math.PI * 0.6) * 1.5;
+            disc(ttx, 4.0, fistD * 0.5, 0.8, 2, 5);
+
+            // ── WRIST ──
+            for (let y = -3; y < 0; y += 0.8) {
+                const wr = 1.0 + y * 0.08;
+                for (let x = -fistW * wr; x <= fistW * wr; x += 1.0) {
+                    for (let z = -fistD * wr; z <= fistD * wr; z += 1.0) {
+                        const onEdge = Math.abs(Math.abs(x) - fistW * wr) < 1.0 || Math.abs(Math.abs(z) - fistD * wr) < 1.0;
+                        if (onEdge) pts.push({ x, y, z });
+                    }
                 }
             }
 
             return pts;
         }
 
-        const FPTS = fingerPoints();
+        const FPTS = buildFingerPoints();
 
         function spawnFinger(wx, wy, wz) {
-            // Finger shape
+            // Hot pink colors
             for (const pt of FPTS) {
+                const h = (pt.y + 5) / 28;
+                // Hot pink gradient
+                const r = 1.0;
+                const g = 0.05 + h * 0.25;
+                const b = 0.4 + h * 0.4;
+
                 addP(
                     wx + pt.x, wy + pt.y, wz + pt.z,
-                    (Math.random() - 0.5) * 0.03,
-                    (Math.random() - 0.5) * 0.03,
-                    (Math.random() - 0.5) * 0.03,
-                    0.85, 0.75, 0.65,
-                    5 + Math.random() * 2, 0.008, 0
+                    (Math.random() - 0.5) * 0.02,
+                    (Math.random() - 0.5) * 0.02,
+                    (Math.random() - 0.5) * 0.02,
+                    r, g, b,
+                    6 + Math.random() * 3, 0.006 + Math.random() * 0.003, 0
                 );
             }
 
-            // Burst
-            for (let i = 0; i < 100; i++) {
+            // Burst sparks
+            for (let i = 0; i < 120; i++) {
                 const a1 = Math.random() * Math.PI * 2;
                 const a2 = (Math.random() - 0.5) * Math.PI;
-                const sp = 0.6 + Math.random() * 1.0;
+                const sp = 0.5 + Math.random() * 1.2;
                 addP(
-                    wx, wy + 10, wz,
+                    wx, wy + 12, wz,
                     Math.cos(a1) * Math.cos(a2) * sp,
-                    Math.sin(a2) * sp * 0.5 + 0.3,
+                    Math.sin(a2) * sp * 0.5 + 0.2,
                     Math.sin(a1) * Math.cos(a2) * sp,
-                    0.9, 0.5, 0.3,
-                    1.5 + Math.random() * 1.5, 0.015, -0.005
+                    1.0, 0.1 + Math.random() * 0.3, 0.5 + Math.random() * 0.4,
+                    1.5 + Math.random() * 1.5, 0.012, -0.004
                 );
             }
 
             // Ring
-            for (let i = 0; i < 50; i++) {
-                const a = (i / 50) * Math.PI * 2;
+            for (let i = 0; i < 60; i++) {
+                const a = (i / 60) * Math.PI * 2;
                 addP(
-                    wx, wy + 4, wz,
-                    Math.cos(a) * 1.2, 0, Math.sin(a) * 1.2,
-                    0.7, 0.7, 0.7,
-                    1.2 + Math.random() * 0.8, 0.018, 0
+                    wx, wy + 5, wz,
+                    Math.cos(a) * 1.0, (Math.random() - 0.5) * 0.2, Math.sin(a) * 1.0,
+                    1.0, 0.0, 0.6,
+                    1.0 + Math.random() * 0.8, 0.016, 0
                 );
             }
 
@@ -202,49 +328,232 @@
         function aimCamera(target) {
             camAngle = Math.atan2(camera.position.x - target.x, camera.position.z - target.z);
             camGoalPos.set(
-                target.x + Math.sin(camAngle) * 40,
-                target.y + 12,
-                target.z + Math.cos(camAngle) * 40
+                target.x + Math.sin(camAngle) * 38,
+                target.y + 10,
+                target.z + Math.cos(camAngle) * 38
             );
             camTarget.copy(target);
             lastDetect = performance.now();
         }
 
-        // ── HAND DETECTION ───────────────────────────────────────
+        // ── HAND DETECTION (detailed) ────────────────────────────
         let detected = false;
         let fingerNorm = { x: 0.5, y: 0.5 };
         let spawnCD = 0;
+        let confidence = 0;
 
-        function checkMiddleFinger(lm) {
-            const w = lm[0];
-            const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-            const ext = (t, m) => d(t, w) > d(m, w) * 1.15;
-            const cur = (t, m) => d(t, w) < d(m, w) * 1.1;
-            return ext(lm[12], lm[9]) && cur(lm[8], lm[5]) && cur(lm[16], lm[13]) && cur(lm[20], lm[17]);
+        // MediaPipe hand connections
+        const HAND_CONNECTIONS = [
+            [0,1],[1,2],[2,3],[3,4],
+            [0,5],[5,6],[6,7],[7,8],
+            [0,9],[9,10],[10,11],[11,12],
+            [0,13],[13,14],[14,15],[15,16],
+            [0,17],[17,18],[18,19],[19,20],
+            [5,9],[9,13],[13,17]
+        ];
+
+        function drawHandDebug(landmarks, isMiddle) {
+            const w = dbgCanvas.width;
+            const h = dbgCanvas.height;
+
+            // Connections
+            for (const [i, j] of HAND_CONNECTIONS) {
+                const a = landmarks[i];
+                const b = landmarks[j];
+
+                // Color middle finger connections differently
+                const isMiddleConn = ([9,10,11,12].includes(i) && [9,10,11,12].includes(j));
+
+                dbgCtx.beginPath();
+                dbgCtx.moveTo(a.x * w, a.y * h);
+                dbgCtx.lineTo(b.x * w, b.y * h);
+
+                if (isMiddle && isMiddleConn) {
+                    dbgCtx.strokeStyle = '#ff2090';
+                    dbgCtx.lineWidth = 3;
+                } else {
+                    dbgCtx.strokeStyle = isMiddle ? '#44ff44' : '#888888';
+                    dbgCtx.lineWidth = 1.5;
+                }
+                dbgCtx.stroke();
+            }
+
+            // Landmarks
+            for (let i = 0; i < landmarks.length; i++) {
+                const lm = landmarks[i];
+                const isMiddleLm = [9,10,11,12].includes(i);
+
+                dbgCtx.beginPath();
+                dbgCtx.arc(lm.x * w, lm.y * h, isMiddleLm ? 4 : 2.5, 0, Math.PI * 2);
+
+                if (isMiddle && isMiddleLm) {
+                    dbgCtx.fillStyle = '#ff2090';
+                } else if (isMiddle) {
+                    dbgCtx.fillStyle = '#44ff44';
+                } else {
+                    dbgCtx.fillStyle = '#666';
+                }
+                dbgCtx.fill();
+
+                // Label middle finger tip
+                if (i === 12 && isMiddle) {
+                    dbgCtx.fillStyle = '#ff2090';
+                    dbgCtx.font = '10px Arial';
+                    dbgCtx.fillText('TIP', lm.x * w + 6, lm.y * h - 6);
+                }
+            }
+
+            // Finger state indicators
+            if (isMiddle) {
+                dbgCtx.fillStyle = '#ff2090';
+                dbgCtx.font = 'bold 14px Arial';
+                dbgCtx.fillText('🖕 DETECTED', 8, 18);
+            }
         }
 
+        function checkMiddleFinger(lm) {
+            const w = lm[0]; // wrist
+
+            // Distance helper
+            const dist = (a, b) => Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + ((a.z||0)-(b.z||0))**2);
+
+            // Finger tip, dip, pip, mcp indices
+            // Thumb: 4,3,2,1
+            // Index: 8,7,6,5
+            // Middle: 12,11,10,9
+            // Ring: 16,15,14,13
+            // Pinky: 20,19,18,17
+
+            // Check if finger is extended: tip further from wrist than pip
+            // AND tip further from palm center than mcp
+            // AND angle check: tip-pip-mcp should be relatively straight
+
+            const palmCenter = {
+                x: (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5,
+                y: (lm[0].y + lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 5,
+                z: ((lm[0].z||0) + (lm[5].z||0) + (lm[9].z||0) + (lm[13].z||0) + (lm[17].z||0)) / 5
+            };
+
+            function fingerExtended(tip, dip, pip, mcp) {
+                const tipWrist = dist(tip, w);
+                const mcpWrist = dist(mcp, w);
+                const tipPalm = dist(tip, palmCenter);
+                const mcpPalm = dist(mcp, palmCenter);
+                const tipMcp = dist(tip, mcp);
+                const pipMcp = dist(pip, mcp);
+
+                // Extended if:
+                // 1. Tip is further from wrist than MCP
+                // 2. Tip is further from palm than MCP
+                // 3. Tip-MCP distance is large relative to pip-mcp (finger is stretched out)
+                return tipWrist > mcpWrist * 1.1 &&
+                       tipPalm > mcpPalm * 1.2 &&
+                       tipMcp > pipMcp * 1.5;
+            }
+
+            function fingerCurled(tip, dip, pip, mcp) {
+                const tipWrist = dist(tip, w);
+                const mcpWrist = dist(mcp, w);
+                const tipPalm = dist(tip, palmCenter);
+                const mcpPalm = dist(mcp, palmCenter);
+                const tipDip = dist(tip, dip);
+                const tipMcp = dist(tip, mcp);
+                const pipMcp = dist(pip, mcp);
+
+                // Curled if:
+                // 1. Tip is close to or closer than MCP to wrist
+                // 2. OR tip is close to palm
+                // 3. OR tip-mcp distance is small (finger is folded)
+                return tipWrist < mcpWrist * 1.15 ||
+                       tipPalm < mcpPalm * 0.9 ||
+                       tipMcp < pipMcp * 1.3;
+            }
+
+            const middleExt = fingerExtended(lm[12], lm[11], lm[10], lm[9]);
+            const indexCurl = fingerCurled(lm[8], lm[7], lm[6], lm[5]);
+            const ringCurl = fingerCurled(lm[16], lm[15], lm[14], lm[13]);
+            const pinkyCurl = fingerCurled(lm[20], lm[19], lm[18], lm[17]);
+
+            // Thumb can be either curled or wrapped - we don't require specific state
+            // but it shouldn't be fully extended straight up
+            const thumbTipDist = dist(lm[4], palmCenter);
+            const middleTipDist = dist(lm[12], palmCenter);
+            const thumbNotPointing = thumbTipDist < middleTipDist * 0.9;
+
+            // Calculate confidence score
+            let score = 0;
+            if (middleExt) score += 3;
+            if (indexCurl) score += 2;
+            if (ringCurl) score += 2;
+            if (pinkyCurl) score += 2;
+            if (thumbNotPointing) score += 1;
+
+            confidence = score / 10;
+
+            return {
+                detected: middleExt && indexCurl && ringCurl && pinkyCurl,
+                confidence: score,
+                tipPosition: lm[12]
+            };
+        }
+
+        // MediaPipe Hands
         const hands = new Hands({
             locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`
         });
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.5
+        });
+
         hands.onResults(res => {
+            // Clear debug canvas
+            dbgCtx.clearRect(0, 0, dbgCanvas.width, dbgCanvas.height);
+
+            // Draw camera feed faintly
+            dbgCtx.globalAlpha = 0.3;
+            dbgCtx.drawImage(res.image, 0, 0, dbgCanvas.width, dbgCanvas.height);
+            dbgCtx.globalAlpha = 1.0;
+
             let found = false;
+            let bestConf = 0;
+
             if (res.multiHandLandmarks) {
                 for (const lm of res.multiHandLandmarks) {
-                    if (checkMiddleFinger(lm)) {
+                    const result = checkMiddleFinger(lm);
+                    drawHandDebug(lm, result.detected);
+
+                    if (result.detected && result.confidence > bestConf) {
                         found = true;
-                        fingerNorm = { x: 1 - lm[12].x, y: lm[12].y };
+                        bestConf = result.confidence;
+                        fingerNorm = { x: 1 - result.tipPosition.x, y: result.tipPosition.y };
                     }
                 }
             }
+
+            // Draw confidence bar
+            dbgCtx.fillStyle = '#222';
+            dbgCtx.fillRect(dbgCanvas.width - 30, 10, 20, dbgCanvas.height - 20);
+            const barH = (dbgCanvas.height - 20) * confidence;
+            const barColor = confidence > 0.7 ? '#ff2090' : confidence > 0.4 ? '#ffaa00' : '#444';
+            dbgCtx.fillStyle = barColor;
+            dbgCtx.fillRect(dbgCanvas.width - 30, dbgCanvas.height - 10 - barH, 20, barH);
+            dbgCtx.fillStyle = '#aaa';
+            dbgCtx.font = '9px Arial';
+            dbgCtx.fillText('CONF', dbgCanvas.width - 32, dbgCanvas.height - 2);
+
             detected = found;
-            statusEl.textContent = found ? '🖕 DETECTED!' : 'Show your middle finger 🖕';
+            statusEl.textContent = found ? '🖕 MIDDLE FINGER DETECTED!' : 'Show your middle finger 🖕';
             statusEl.className = found ? 'active' : '';
         });
 
         async function startCam() {
             try {
-                const s = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+                const s = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480, facingMode: 'user' }
+                });
                 video.srcObject = s;
                 new Camera(video, {
                     onFrame: async () => await hands.send({ image: video }),
@@ -252,7 +561,7 @@
                 }).start();
                 loadingScreen.style.display = 'none';
             } catch (e) {
-                loadingScreen.innerHTML = '<p style="color:#f55">Camera access denied — allow and reload</p>';
+                loadingScreen.innerHTML = '<p style="color:#f55">Camera denied — allow & reload</p>';
             }
         }
 
@@ -269,30 +578,30 @@
             if (detected) {
                 spawnCD -= dt;
                 if (spawnCD <= 0) {
-                    const wx = (fingerNorm.x - 0.5) * 55;
+                    const wx = (fingerNorm.x - 0.5) * 50;
                     const wy = (0.5 - fingerNorm.y) * 35 + 5;
-                    const wz = (Math.random() - 0.5) * 25;
+                    const wz = (Math.random() - 0.5) * 20;
                     const t = spawnFinger(wx, wy, wz);
                     aimCamera(t);
-                    spawnCD = 1.5;
+                    spawnCD = 1.8;
                 }
             }
 
             // Camera
             const idle = now - lastDetect > 5000;
             if (idle) {
-                camAngle += dt * 0.15;
-                camGoalPos.set(Math.sin(camAngle) * 55, 18, Math.cos(camAngle) * 55);
-                camTarget.lerp(new THREE.Vector3(0, 6, 0), dt * 0.4);
+                camAngle += dt * 0.12;
+                camGoalPos.set(Math.sin(camAngle) * 50, 16, Math.cos(camAngle) * 50);
+                camTarget.lerp(new THREE.Vector3(0, 6, 0), dt * 0.3);
             } else {
-                camAngle += dt * 0.25;
+                camAngle += dt * 0.2;
                 camGoalPos.set(
-                    camTarget.x + Math.sin(camAngle) * 40,
-                    camTarget.y + 12,
-                    camTarget.z + Math.cos(camAngle) * 40
+                    camTarget.x + Math.sin(camAngle) * 38,
+                    camTarget.y + 10,
+                    camTarget.z + Math.cos(camAngle) * 38
                 );
             }
-            camera.position.lerp(camGoalPos, dt * 2.2);
+            camera.position.lerp(camGoalPos, dt * 2.0);
             camera.lookAt(camTarget);
 
             // Update particles
@@ -305,19 +614,20 @@
                 p.life -= p.decay;
                 if (p.life <= 0) { P.splice(i, 1); continue; }
 
-                const f = p.life / p.maxLife;
+                const f = Math.max(0, p.life / p.maxLife);
                 dummy.position.set(p.x, p.y, p.z);
-                dummy.scale.setScalar(0.6 + f * 0.4);
+                const s = 0.5 + f * 0.5;
+                dummy.scale.setScalar(s);
                 dummy.updateMatrix();
                 mesh.setMatrixAt(alive, dummy.matrix);
-                tmpColor.setRGB(p.r * f, p.g * f, p.b * f);
-                mesh.setColorAt(alive, tmpColor);
+                tmpC.setRGB(p.r * f, p.g * f, p.b * f);
+                mesh.setColorAt(alive, tmpC);
                 alive++;
             }
 
-            // Hide unused instances far away
+            // Hide leftover
             if (alive < mesh.count) {
-                dummy.position.set(0, -500, 0);
+                dummy.position.set(0, -999, 0);
                 dummy.scale.setScalar(0);
                 dummy.updateMatrix();
                 for (let i = alive; i < mesh.count; i++) {
@@ -328,6 +638,8 @@
             mesh.count = alive;
             mesh.instanceMatrix.needsUpdate = true;
             if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+            countEl.textContent = `particles: ${alive}`;
 
             renderer.render(scene, camera);
         }
