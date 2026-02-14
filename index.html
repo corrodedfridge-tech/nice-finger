@@ -6,27 +6,32 @@
     <title>3D Middle Finger Particles</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #000; overflow: hidden; font-family: Arial, sans-serif; }
-        #three-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
-        #video { position: fixed; bottom: 20px; right: 20px; width: 200px; height: 150px;
-                 border: 2px solid #333; border-radius: 8px; z-index: 20; transform: scaleX(-1);
-                 object-fit: cover; }
-        #status { position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-                  color: #fff; font-size: 16px; z-index: 30; text-align: center;
-                  background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 8px; }
-        .loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-                   color: white; font-size: 22px; z-index: 100; text-align: center; }
-        .spinner { border: 4px solid #333; border-top: 4px solid #fff; border-radius: 50%;
-                   width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 15px auto; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        body { background: #111; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #video {
+            position: fixed; bottom: 15px; right: 15px; width: 180px; height: 135px;
+            border: 2px solid #333; border-radius: 6px; z-index: 20;
+            transform: scaleX(-1); object-fit: cover;
+        }
+        #status {
+            position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
+            color: #ccc; font-size: 15px; z-index: 30; text-align: center;
+            background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 6px;
+        }
+        #status.active { color: #f55; }
+        .loading {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            color: #ccc; font-size: 20px; z-index: 100; text-align: center;
+        }
+        .spinner {
+            border: 3px solid #333; border-top: 3px solid #ccc; border-radius: 50%;
+            width: 36px; height: 36px; animation: s 1s linear infinite; margin: 12px auto;
+        }
+        @keyframes s { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-    <div id="loadingScreen" class="loading">
-        <div class="spinner"></div>
-        <p>Loading...</p>
-    </div>
-    <div id="three-canvas"></div>
+    <div id="loadingScreen" class="loading"><div class="spinner"></div><p>Loading...</p></div>
     <video id="video" autoplay playsinline></video>
     <div id="status">Show your middle finger 🖕</div>
 
@@ -35,456 +40,300 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-    (function() {
+    (function () {
         const video = document.getElementById('video');
         const statusEl = document.getElementById('status');
         const loadingScreen = document.getElementById('loadingScreen');
 
-        // ─── THREE.JS SETUP ────────────────────────────────────────
+        // ── THREE SETUP ──────────────────────────────────────────
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x000000, 0.008);
+        scene.background = new THREE.Color(0x111118);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 10, 60);
-        camera.lookAt(0, 0, 0);
+        const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);
+        camera.position.set(0, 15, 55);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setClearColor(0x050510);
-        document.getElementById('three-canvas').appendChild(renderer.domElement);
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(1);
+        document.body.prepend(renderer.domElement);
 
         window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = innerWidth / innerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(innerWidth, innerHeight);
         });
 
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0x222244, 0.5);
-        scene.add(ambientLight);
-        const pointLight1 = new THREE.PointLight(0xff4444, 2, 200);
-        pointLight1.position.set(20, 30, 20);
-        scene.add(pointLight1);
-        const pointLight2 = new THREE.PointLight(0x4444ff, 1.5, 200);
-        pointLight2.position.set(-20, -10, 30);
-        scene.add(pointLight2);
+        // Simple directional light + ambient
+        scene.add(new THREE.AmbientLight(0x888888));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(5, 20, 10);
+        scene.add(dirLight);
 
-        // Star field
-        const starGeo = new THREE.BufferGeometry();
-        const starCount = 2000;
-        const starPos = new Float32Array(starCount * 3);
-        for (let i = 0; i < starCount * 3; i += 3) {
-            starPos[i]   = (Math.random() - 0.5) * 400;
-            starPos[i+1] = (Math.random() - 0.5) * 400;
-            starPos[i+2] = (Math.random() - 0.5) * 400;
-        }
-        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.6 });
-        scene.add(new THREE.Points(starGeo, starMat));
+        // Grid
+        const grid = new THREE.GridHelper(160, 30, 0x333333, 0x222222);
+        grid.position.y = -18;
+        scene.add(grid);
 
-        // Grid floor
-        const gridHelper = new THREE.GridHelper(200, 40, 0x222255, 0x111133);
-        gridHelper.position.y = -20;
-        scene.add(gridHelper);
+        // ── INSTANCED MESH (single draw call, same geometry) ─────
+        const SPHERE = new THREE.IcosahedronGeometry(0.35, 0);
+        const MAT = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+        const MAX = 15000;
+        const mesh = new THREE.InstancedMesh(SPHERE, MAT, MAX);
+        mesh.count = 0;
+        scene.add(mesh);
 
-        // ─── PARTICLE SYSTEM ───────────────────────────────────────
-        const MAX_PARTICLES = 20000;
-        const particleGeo = new THREE.BufferGeometry();
-        const positions = new Float32Array(MAX_PARTICLES * 3);
-        const colors = new Float32Array(MAX_PARTICLES * 3);
-        const sizes = new Float32Array(MAX_PARTICLES);
+        const dummy = new THREE.Object3D();
+        const tmpColor = new THREE.Color();
 
-        particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        particleGeo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        // Particle data
+        const P = []; // {x,y,z,vx,vy,vz,life,decay,grav,r,g,b}
 
-        // Custom shader material for particles
-        const particleMat = new THREE.ShaderMaterial({
-            uniforms: {
-                uTime: { value: 0 }
-            },
-            vertexShader: `
-                attribute float size;
-                attribute vec3 color;
-                varying vec3 vColor;
-                varying float vAlpha;
-                void main() {
-                    vColor = color;
-                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = size * (200.0 / -mvPosition.z);
-                    gl_PointSize = clamp(gl_PointSize, 1.0, 60.0);
-                    gl_Position = projectionMatrix * mvPosition;
-                    vAlpha = 1.0;
-                }
-            `,
-            fragmentShader: `
-                varying vec3 vColor;
-                void main() {
-                    float d = length(gl_PointCoord - vec2(0.5));
-                    if (d > 0.5) discard;
-                    float alpha = 1.0 - smoothstep(0.2, 0.5, d);
-                    vec3 glow = vColor * (1.0 + 2.0 * (1.0 - d * 2.0));
-                    gl_FragColor = vec4(glow, alpha);
-                }
-            `,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-
-        const particleSystem = new THREE.Points(particleGeo, particleMat);
-        scene.add(particleSystem);
-
-        // Particle data arrays
-        const pData = [];
-
-        function addParticle(x, y, z, vx, vy, vz, r, g, b, size, life, decay, gravity) {
-            if (pData.length >= MAX_PARTICLES) return;
-            pData.push({ x, y, z, vx, vy, vz, r, g, b, size, life, maxLife: life, decay, gravity });
+        function addP(x, y, z, vx, vy, vz, r, g, b, life, decay, grav) {
+            if (P.length >= MAX) return;
+            P.push({ x, y, z, vx, vy, vz, r, g, b, life, maxLife: life, decay, grav });
         }
 
-        // ─── MIDDLE FINGER 3D MODEL (particles) ────────────────────
-        function getMiddleFingerPoints() {
-            const points = [];
+        // ── MIDDLE FINGER POINT CLOUD ────────────────────────────
+        function fingerPoints() {
+            const pts = [];
 
-            // Middle finger (long vertical part)
-            for (let y = 0; y < 16; y++) {
-                const radius = y === 0 ? 1.8 : (y > 14 ? 1.5 - (y - 14) * 0.3 : 1.8);
-                for (let angle = 0; angle < Math.PI * 2; angle += 0.35) {
-                    for (let r = 0; r < radius; r += 0.7) {
-                        points.push({
-                            x: Math.cos(angle) * r,
-                            y: y * 1.0 + 6,
-                            z: Math.sin(angle) * r
-                        });
+            // Middle finger shaft
+            for (let y = 0; y < 15; y += 0.9) {
+                const n = 8;
+                for (let i = 0; i < n; i++) {
+                    const a = (i / n) * Math.PI * 2;
+                    const r = 1.6;
+                    pts.push({ x: Math.cos(a) * r, y: y + 6, z: Math.sin(a) * r });
+                }
+            }
+
+            // Fingertip hemisphere
+            for (let p = 0; p < Math.PI / 2; p += 0.4) {
+                const n = Math.max(4, Math.floor(8 * Math.cos(p)));
+                for (let i = 0; i < n; i++) {
+                    const a = (i / n) * Math.PI * 2;
+                    const r = 1.6 * Math.cos(p);
+                    pts.push({ x: Math.cos(a) * r, y: 21 + Math.sin(p) * 1.6, z: Math.sin(a) * r });
+                }
+            }
+
+            // Fist block
+            for (let y = 0; y < 5; y += 1.0) {
+                for (let x = -4.5; x <= 4.5; x += 1.0) {
+                    for (let z = -1.8; z <= 1.8; z += 1.0) {
+                        pts.push({ x, y: y * 0.9, z });
                     }
                 }
             }
 
-            // Fingertip dome
-            for (let phi = 0; phi < Math.PI / 2; phi += 0.3) {
-                for (let theta = 0; theta < Math.PI * 2; theta += 0.4) {
-                    const r = 1.8 * Math.cos(phi);
-                    points.push({
-                        x: Math.cos(theta) * r,
-                        y: 22 + Math.sin(phi) * 1.8,
-                        z: Math.sin(theta) * r
-                    });
+            // Curled finger bumps
+            for (const fx of [-3.2, -1.2, 1.2, 3.2]) {
+                for (let a = 0; a < Math.PI; a += 0.5) {
+                    const r = 1.0;
+                    pts.push({ x: fx + Math.cos(a + Math.PI) * r, y: 5 + Math.sin(a + Math.PI) * r, z: 0 });
+                    pts.push({ x: fx + Math.cos(a + Math.PI) * r, y: 5 + Math.sin(a + Math.PI) * r, z: 1 });
+                    pts.push({ x: fx + Math.cos(a + Math.PI) * r, y: 5 + Math.sin(a + Math.PI) * r, z: -1 });
                 }
             }
 
-            // Knuckle / fist base
-            for (let y = 0; y < 6; y++) {
-                for (let x = -5; x <= 5; x += 0.8) {
-                    for (let z = -2; z <= 2; z += 0.8) {
-                        const distEdge = Math.min(5 - Math.abs(x), 2 - Math.abs(z));
-                        if (distEdge < 0) continue;
-                        points.push({ x, y: y * 0.8, z });
-                    }
+            // Thumb
+            for (let t = 0; t < 7; t++) {
+                const ty = 1 + t * 0.7;
+                const tx = 5 + Math.sin(t * 0.3) * 1.2;
+                for (let i = 0; i < 5; i++) {
+                    const a = (i / 5) * Math.PI * 2;
+                    pts.push({ x: tx + Math.cos(a) * 0.9, y: ty, z: Math.sin(a) * 0.9 });
                 }
             }
 
-            // Curled fingers bumps on fist
-            const fingerXPos = [-3.5, -1.5, 1.5, 3.5];
-            for (const fx of fingerXPos) {
-                if (Math.abs(fx) < 1) continue;
-                for (let angle = 0; angle < Math.PI; angle += 0.3) {
-                    for (let r = 0; r < 1.2; r += 0.5) {
-                        for (let zz = -1; zz <= 1; zz += 0.6) {
-                            points.push({
-                                x: fx + Math.cos(angle + Math.PI) * r,
-                                y: 5 + Math.sin(angle + Math.PI) * r,
-                                z: zz
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Thumb on the side
-            for (let t = 0; t < 8; t++) {
-                const ty = 1 + t * 0.6;
-                const tx = 5 + Math.sin(t * 0.3) * 1.5;
-                for (let angle = 0; angle < Math.PI * 2; angle += 0.5) {
-                    for (let r = 0; r < 1.2; r += 0.5) {
-                        points.push({
-                            x: tx + Math.cos(angle) * r,
-                            y: ty,
-                            z: Math.sin(angle) * r
-                        });
-                    }
-                }
-            }
-
-            return points;
+            return pts;
         }
 
-        const fingerPoints = getMiddleFingerPoints();
+        const FPTS = fingerPoints();
 
-        // ─── FINGER INSTANCES ─────────────────────────────────────
-        let fingerInstances = []; // each: { center, particles start data, time }
-        let instanceIdCounter = 0;
-
-        function spawnMiddleFinger(worldX, worldY, worldZ) {
-            const scale = 1.0;
-            const id = instanceIdCounter++;
-
-            for (const pt of fingerPoints) {
-                const px = worldX + pt.x * scale;
-                const py = worldY + pt.y * scale;
-                const pz = worldZ + pt.z * scale;
-
-                // Slight random velocity for organic feel
-                const vx = (Math.random() - 0.5) * 0.05;
-                const vy = (Math.random() - 0.5) * 0.05;
-                const vz = (Math.random() - 0.5) * 0.05;
-
-                // Color: warm red/orange gradient based on height
-                const t = (pt.y + 5) / 30;
-                const r = 0.9 + Math.random() * 0.1;
-                const g = 0.2 + t * 0.5 + Math.random() * 0.1;
-                const b = 0.1 + Math.random() * 0.1;
-
-                addParticle(px, py, pz, vx, vy, vz, r, g, b, 0.6 + Math.random() * 0.4, 5 + Math.random() * 3, 0.008 + Math.random() * 0.005, 0);
+        function spawnFinger(wx, wy, wz) {
+            // Finger shape
+            for (const pt of FPTS) {
+                addP(
+                    wx + pt.x, wy + pt.y, wz + pt.z,
+                    (Math.random() - 0.5) * 0.03,
+                    (Math.random() - 0.5) * 0.03,
+                    (Math.random() - 0.5) * 0.03,
+                    0.85, 0.75, 0.65,
+                    5 + Math.random() * 2, 0.008, 0
+                );
             }
 
-            // Explosion sparks around it
-            for (let i = 0; i < 150; i++) {
-                const angle1 = Math.random() * Math.PI * 2;
-                const angle2 = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 1.5 + 0.5;
-                const vx = Math.cos(angle1) * Math.cos(angle2) * speed;
-                const vy = Math.sin(angle2) * speed * 0.5 + Math.random() * 0.5;
-                const vz = Math.sin(angle1) * Math.cos(angle2) * speed;
-
-                const r = 1.0;
-                const g = 0.3 + Math.random() * 0.6;
-                const b = Math.random() * 0.2;
-
-                addParticle(worldX, worldY + 10, worldZ, vx, vy, vz, r, g, b,
-                    0.3 + Math.random() * 0.5, 2 + Math.random() * 2, 0.015 + Math.random() * 0.01, -0.003);
+            // Burst
+            for (let i = 0; i < 100; i++) {
+                const a1 = Math.random() * Math.PI * 2;
+                const a2 = (Math.random() - 0.5) * Math.PI;
+                const sp = 0.6 + Math.random() * 1.0;
+                addP(
+                    wx, wy + 10, wz,
+                    Math.cos(a1) * Math.cos(a2) * sp,
+                    Math.sin(a2) * sp * 0.5 + 0.3,
+                    Math.sin(a1) * Math.cos(a2) * sp,
+                    0.9, 0.5, 0.3,
+                    1.5 + Math.random() * 1.5, 0.015, -0.005
+                );
             }
 
-            // Ring burst
-            for (let i = 0; i < 80; i++) {
-                const angle = (i / 80) * Math.PI * 2;
-                const speed = 1.5 + Math.random() * 0.5;
-                addParticle(worldX, worldY + 5, worldZ,
-                    Math.cos(angle) * speed, (Math.random() - 0.5) * 0.3, Math.sin(angle) * speed,
-                    1, 0.8, 0.2, 0.4, 1.5 + Math.random(), 0.015, 0);
+            // Ring
+            for (let i = 0; i < 50; i++) {
+                const a = (i / 50) * Math.PI * 2;
+                addP(
+                    wx, wy + 4, wz,
+                    Math.cos(a) * 1.2, 0, Math.sin(a) * 1.2,
+                    0.7, 0.7, 0.7,
+                    1.2 + Math.random() * 0.8, 0.018, 0
+                );
             }
 
-            fingerInstances.push({
-                id,
-                center: new THREE.Vector3(worldX, worldY + 12, worldZ),
-                time: performance.now()
-            });
-
-            return { x: worldX, y: worldY + 12, z: worldZ };
+            return new THREE.Vector3(wx, wy + 12, wz);
         }
 
-        // ─── CAMERA CONTROL ───────────────────────────────────────
-        let cameraTarget = new THREE.Vector3(0, 10, 0);
-        let cameraTargetPos = new THREE.Vector3(0, 10, 60);
-        let cameraAngle = 0;
-        let autoRotate = true;
-        let lastDetectionTime = 0;
+        // ── CAMERA ───────────────────────────────────────────────
+        let camTarget = new THREE.Vector3(0, 8, 0);
+        let camGoalPos = new THREE.Vector3(0, 15, 55);
+        let camAngle = 0;
+        let lastDetect = 0;
 
-        function smoothCameraTo(target) {
-            // position camera looking at the target from an angle
-            const dist = 45;
-            cameraAngle = Math.atan2(camera.position.x - target.x, camera.position.z - target.z);
-            cameraTargetPos.set(
-                target.x + Math.sin(cameraAngle) * dist,
-                target.y + 15,
-                target.z + Math.cos(cameraAngle) * dist
+        function aimCamera(target) {
+            camAngle = Math.atan2(camera.position.x - target.x, camera.position.z - target.z);
+            camGoalPos.set(
+                target.x + Math.sin(camAngle) * 40,
+                target.y + 12,
+                target.z + Math.cos(camAngle) * 40
             );
-            cameraTarget.copy(target);
-            autoRotate = false;
-            lastDetectionTime = performance.now();
+            camTarget.copy(target);
+            lastDetect = performance.now();
         }
 
-        // ─── HAND DETECTION ──────────────────────────────────────
-        let middleFingerDetected = false;
-        let detectedFingerNorm = { x: 0.5, y: 0.5 };
-        let spawnCooldown = 0;
+        // ── HAND DETECTION ───────────────────────────────────────
+        let detected = false;
+        let fingerNorm = { x: 0.5, y: 0.5 };
+        let spawnCD = 0;
 
-        function isMiddleFinger(landmarks) {
-            const wrist = landmarks[0];
-
-            const middleTip = landmarks[12], middlePip = landmarks[11], middleMcp = landmarks[9];
-            const indexTip = landmarks[8], indexPip = landmarks[7], indexMcp = landmarks[5];
-            const ringTip = landmarks[16], ringPip = landmarks[15], ringMcp = landmarks[13];
-            const pinkyTip = landmarks[20], pinkyPip = landmarks[19], pinkyMcp = landmarks[17];
-
-            function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-            function extended(tip, pip, mcp) { return dist(tip, wrist) > dist(mcp, wrist) * 1.15; }
-            function curled(tip, pip, mcp) { return dist(tip, wrist) < dist(mcp, wrist) * 1.1; }
-
-            return {
-                detected: extended(middleTip, middlePip, middleMcp) &&
-                          curled(indexTip, indexPip, indexMcp) &&
-                          curled(ringTip, ringPip, ringMcp) &&
-                          curled(pinkyTip, pinkyPip, pinkyMcp),
-                tipPosition: middleTip
-            };
+        function checkMiddleFinger(lm) {
+            const w = lm[0];
+            const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+            const ext = (t, m) => d(t, w) > d(m, w) * 1.15;
+            const cur = (t, m) => d(t, w) < d(m, w) * 1.1;
+            return ext(lm[12], lm[9]) && cur(lm[8], lm[5]) && cur(lm[16], lm[13]) && cur(lm[20], lm[17]);
         }
 
-        // MediaPipe
         const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+            locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`
         });
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
-
-        hands.onResults((results) => {
-            let detected = false;
-            let tipPos = null;
-
-            if (results.multiHandLandmarks) {
-                for (const landmarks of results.multiHandLandmarks) {
-                    const result = isMiddleFinger(landmarks);
-                    if (result.detected) {
-                        detected = true;
-                        tipPos = { x: 1 - result.tipPosition.x, y: result.tipPosition.y };
+        hands.onResults(res => {
+            let found = false;
+            if (res.multiHandLandmarks) {
+                for (const lm of res.multiHandLandmarks) {
+                    if (checkMiddleFinger(lm)) {
+                        found = true;
+                        fingerNorm = { x: 1 - lm[12].x, y: lm[12].y };
                     }
                 }
             }
-
-            if (detected && tipPos) {
-                middleFingerDetected = true;
-                detectedFingerNorm = tipPos;
-                statusEl.textContent = '🖕 DETECTED!';
-                statusEl.style.color = '#ff4444';
-                statusEl.style.textShadow = '0 0 15px rgba(255,50,50,0.8)';
-            } else {
-                middleFingerDetected = false;
-                statusEl.textContent = 'Show your middle finger 🖕';
-                statusEl.style.color = '#fff';
-                statusEl.style.textShadow = 'none';
-            }
+            detected = found;
+            statusEl.textContent = found ? '🖕 DETECTED!' : 'Show your middle finger 🖕';
+            statusEl.className = found ? 'active' : '';
         });
 
-        async function startCamera() {
+        async function startCam() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
-                video.srcObject = stream;
-                const cam = new Camera(video, {
-                    onFrame: async () => { await hands.send({ image: video }); },
+                const s = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+                video.srcObject = s;
+                new Camera(video, {
+                    onFrame: async () => await hands.send({ image: video }),
                     width: 640, height: 480
-                });
-                cam.start();
+                }).start();
                 loadingScreen.style.display = 'none';
-            } catch (err) {
-                loadingScreen.innerHTML = `<p style="color:#f44">Camera access denied</p><p style="font-size:14px;color:#888;margin-top:10px">Allow camera and reload</p>`;
+            } catch (e) {
+                loadingScreen.innerHTML = '<p style="color:#f55">Camera access denied — allow and reload</p>';
             }
         }
 
-        // ─── ANIMATION LOOP ──────────────────────────────────────
-        const clock = new THREE.Clock();
+        // ── LOOP ─────────────────────────────────────────────────
+        let prev = performance.now();
 
-        function animate() {
-            requestAnimationFrame(animate);
-            const dt = clock.getDelta();
-            const elapsed = clock.getElapsedTime();
+        function loop() {
+            requestAnimationFrame(loop);
+            const now = performance.now();
+            const dt = Math.min((now - prev) / 1000, 0.05);
+            prev = now;
 
-            // Spawn finger when detected
-            if (middleFingerDetected) {
-                spawnCooldown -= dt;
-                if (spawnCooldown <= 0) {
-                    // Map screen coords to 3D world — spread them out
-                    const wx = (detectedFingerNorm.x - 0.5) * 60;
-                    const wy = (1 - detectedFingerNorm.y - 0.5) * 40 + 5;
-                    const wz = (Math.random() - 0.5) * 30;
-
-                    const target = spawnMiddleFinger(wx, wy, wz);
-                    smoothCameraTo(new THREE.Vector3(target.x, target.y, target.z));
-                    spawnCooldown = 1.5; // seconds between spawns
+            // Spawn
+            if (detected) {
+                spawnCD -= dt;
+                if (spawnCD <= 0) {
+                    const wx = (fingerNorm.x - 0.5) * 55;
+                    const wy = (0.5 - fingerNorm.y) * 35 + 5;
+                    const wz = (Math.random() - 0.5) * 25;
+                    const t = spawnFinger(wx, wy, wz);
+                    aimCamera(t);
+                    spawnCD = 1.5;
                 }
             }
 
-            // Auto-rotate when idle
-            if (performance.now() - lastDetectionTime > 5000) {
-                autoRotate = true;
-            }
-
-            if (autoRotate) {
-                cameraAngle += dt * 0.2;
-                const radius = 65;
-                cameraTargetPos.set(
-                    Math.sin(cameraAngle) * radius,
-                    20,
-                    Math.cos(cameraAngle) * radius
-                );
-                cameraTarget.lerp(new THREE.Vector3(0, 8, 0), dt * 0.5);
+            // Camera
+            const idle = now - lastDetect > 5000;
+            if (idle) {
+                camAngle += dt * 0.15;
+                camGoalPos.set(Math.sin(camAngle) * 55, 18, Math.cos(camAngle) * 55);
+                camTarget.lerp(new THREE.Vector3(0, 6, 0), dt * 0.4);
             } else {
-                // Orbit around target slowly
-                cameraAngle += dt * 0.3;
-                const radius = 45;
-                cameraTargetPos.set(
-                    cameraTarget.x + Math.sin(cameraAngle) * radius,
-                    cameraTarget.y + 15,
-                    cameraTarget.z + Math.cos(cameraAngle) * radius
+                camAngle += dt * 0.25;
+                camGoalPos.set(
+                    camTarget.x + Math.sin(camAngle) * 40,
+                    camTarget.y + 12,
+                    camTarget.z + Math.cos(camAngle) * 40
                 );
             }
-
-            // Smooth camera movement
-            camera.position.lerp(cameraTargetPos, dt * 2.5);
-            const lookTarget = new THREE.Vector3();
-            lookTarget.copy(camera.position).lerp(cameraTarget, 1);
-            camera.lookAt(cameraTarget);
-
-            // Update lights
-            pointLight1.position.set(Math.sin(elapsed * 0.5) * 30, 25, Math.cos(elapsed * 0.5) * 30);
-            pointLight2.position.set(Math.sin(elapsed * 0.3 + 2) * 25, -5, Math.cos(elapsed * 0.3 + 2) * 25);
+            camera.position.lerp(camGoalPos, dt * 2.2);
+            camera.lookAt(camTarget);
 
             // Update particles
             let alive = 0;
-            for (let i = pData.length - 1; i >= 0; i--) {
-                const p = pData[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.z += p.vz;
-                p.vy += p.gravity;
+            for (let i = P.length - 1; i >= 0; i--) {
+                const p = P[i];
+                p.x += p.vx; p.y += p.vy; p.z += p.vz;
+                p.vy += p.grav;
+                p.vx *= 0.999; p.vz *= 0.999;
                 p.life -= p.decay;
-                p.vx *= 0.998;
-                p.vz *= 0.998;
+                if (p.life <= 0) { P.splice(i, 1); continue; }
 
-                if (p.life <= 0) {
-                    pData.splice(i, 1);
-                    continue;
-                }
-
-                const lifeRatio = p.life / p.maxLife;
-                const idx3 = alive * 3;
-                positions[idx3]     = p.x;
-                positions[idx3 + 1] = p.y;
-                positions[idx3 + 2] = p.z;
-                colors[idx3]     = p.r * lifeRatio;
-                colors[idx3 + 1] = p.g * lifeRatio;
-                colors[idx3 + 2] = p.b * lifeRatio;
-                sizes[alive] = p.size * (0.3 + lifeRatio * 0.7);
+                const f = p.life / p.maxLife;
+                dummy.position.set(p.x, p.y, p.z);
+                dummy.scale.setScalar(0.6 + f * 0.4);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(alive, dummy.matrix);
+                tmpColor.setRGB(p.r * f, p.g * f, p.b * f);
+                mesh.setColorAt(alive, tmpColor);
                 alive++;
             }
 
-            // Zero out unused
-            for (let i = alive; i < MAX_PARTICLES; i++) {
-                positions[i * 3] = 0;
-                positions[i * 3 + 1] = -1000;
-                positions[i * 3 + 2] = 0;
-                sizes[i] = 0;
+            // Hide unused instances far away
+            if (alive < mesh.count) {
+                dummy.position.set(0, -500, 0);
+                dummy.scale.setScalar(0);
+                dummy.updateMatrix();
+                for (let i = alive; i < mesh.count; i++) {
+                    mesh.setMatrixAt(i, dummy.matrix);
+                }
             }
 
-            particleGeo.attributes.position.needsUpdate = true;
-            particleGeo.attributes.color.needsUpdate = true;
-            particleGeo.attributes.size.needsUpdate = true;
-            particleGeo.setDrawRange(0, alive);
+            mesh.count = alive;
+            mesh.instanceMatrix.needsUpdate = true;
+            if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
             renderer.render(scene, camera);
         }
 
-        animate();
-        startCamera();
+        loop();
+        startCam();
     })();
     </script>
 </body>
